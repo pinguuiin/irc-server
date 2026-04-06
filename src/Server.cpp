@@ -1,9 +1,11 @@
 #include "Server.hpp"
+#include "Client.hpp"
 #include <unistd.h> // for close()
 #include <cstring> // for strerror(), memset()
 #include <fcntl.h>
 #include <sys/socket.h>
 #include <netinet/in.h> // for struct sockaddr
+#include <arpa/inet.h> // for inet_ntop()
 #include <iostream> // for io and error handling
 
 
@@ -49,6 +51,8 @@ void	Server::createSocket()
 	std::cout << "Server listening on port " << _port << "..." << std::endl;
 }
 
+/* Create epoll instance and start polling for incoming connection
+requests from clients and messages sent by registered clients */
 void Server::handlePolling()
 {
 
@@ -69,6 +73,8 @@ void Server::handlePolling()
 	int n, nfds, cliFd;
 	struct sockaddr_in addr;
 	socklen_t len;
+	char buf[INET_ADDRSTRLEN];
+	Client client;
 
 	cliFd = -1;
 	len = sizeof(addr);
@@ -88,6 +94,11 @@ void Server::handlePolling()
 				ev.data.fd = cliFd;
 				if (epoll_ctl(_epollFd, EPOLL_CTL_ADD, cliFd, &ev) == -1)
 					throw std::runtime_error(std::string("epoll_ctl error: ") + std::strerror(errno));
+				if (inet_ntop(AF_INET, &(addr.sin_addr), buf, INET_ADDRSTRLEN) == NULL)
+					throw std::runtime_error(std::string("inet_ntop error: ") + std::strerror(errno));
+				client.setIp(buf);                    //
+				_client.insert({cliFd, client});
+				_fds.push_back(cliFd);
 			}
 			else
 				recv();

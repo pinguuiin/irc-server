@@ -2,8 +2,11 @@
 
 #include <sys/epoll.h>
 #include <vector>
+#include <map>
 
 #define MAXCONN 128
+
+class Client;
 
 class Server {
 
@@ -20,4 +23,5 @@ class Server {
 		int _serFd{-1}; // listening socket file descriptor
 		int _epollFd{-1};
 		std::vector<int> _fds;
+		std::map<int, Client> _client;
 };
