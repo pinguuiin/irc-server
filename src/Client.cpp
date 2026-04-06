@@ -9,6 +9,8 @@
 
 Client::~Client()
 {
-	if (_sockFd != -1)
-		close(_sockFd);
+	if (_fd != -1) {
+		close(_fd);
+		_fd = -1;
+	}
 }

@@ -7,5 +7,5 @@ class Client {
 		~Client();
 
 	private:
-		int	_sockFd{-1};
+		int	_fd{-1};
 };

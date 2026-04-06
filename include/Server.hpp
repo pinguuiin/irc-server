@@ -1,5 +1,10 @@
 #pragma once
 
+#include <sys/epoll.h>
+#include <vector>
+
+#define MAXCONN 128
+
 class Server {
 
 	public:
@@ -7,9 +12,12 @@ class Server {
 		~Server();
 
 		void createSocket();
+		void handlePolling();
 		void initServer();
 
 	private:
 		static constexpr uint16_t _port = 9999;
-		int _sockFd{-1}; // listening socket file descriptor
+		int _serFd{-1}; // listening socket file descriptor
+		int _epollFd{-1};
+		std::vector<int> _fds;
 };
