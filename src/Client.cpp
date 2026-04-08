@@ -14,3 +14,23 @@ Client::~Client()
 		_fd = -1;
 	}
 }
+
+const int &Client::getFd() const
+{
+	return _fd;
+}
+
+const std::string &Client::getIp() const
+{
+	return _ip;
+}
+
+void Client::setFd(int fd)
+{
+	_fd = fd;
+}
+
+void Client::setIp(std::string ip)
+{
+	_ip = ip;
+}
