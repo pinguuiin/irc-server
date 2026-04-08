@@ -6,7 +6,7 @@ class Client {
 
 	public:
 		Client() = default;
-		~Client();
+		~Client() = default;
 
 		const int &getFd() const;
 		const std::string &getIp() const;

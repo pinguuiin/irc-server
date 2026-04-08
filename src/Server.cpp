@@ -1,5 +1,5 @@
-#include "Server.hpp"
-#include "Client.hpp"
+#include "../include/Server.hpp"
+#include "../include/Client.hpp"
 #include <unistd.h> // for close()
 #include <cstring> // for strerror(), memset()
 #include <fcntl.h>
@@ -9,15 +9,18 @@
 #include <iostream> // for io and error handling
 
 
+Server::Server(uint16_t port, std::string password) : _port(port), _password(password) {}
+
 Server::~Server()
 {
-	if (_serFd != -1) {
+	if (_serFd != -1)
 		close(_serFd);
-		_serFd = -1;  // these could be safely removed if they turn out to be redundant in the end
-	}
-	if (_epollFd != -1) {
+	if (_epollFd != -1)
 		close(_epollFd);
-		_epollFd = -1;
+
+	for (auto cli : _client) {
+		if (cli.first != -1)
+			close(cli.first);
 	}
 }
 
@@ -92,8 +95,7 @@ void	Server::receiveMessage(int fd)
 		memset(buf, 0, sizeof(buf));
 		n = recv(fd, buf, sizeof(buf), 0);
 		if (n < 0) {
-			if (errno == EAGAIN || errno == EWOULDBLOCK) { // End of input (Append a new line?)
-				std::cout << std::endl;
+			if (errno == EAGAIN || errno == EWOULDBLOCK) { // End of input
 				return ;
 			}
 			throw std::runtime_error(std::string("recv error: ") + std::strerror(errno));
@@ -104,7 +106,7 @@ void	Server::receiveMessage(int fd)
 			close(fd);
 		}
 		else
-			std::cout.write(buf, n);
+			std::cout.write(buf, n);  // to be replaced with more complex message handler
 	}
 }
 
@@ -113,7 +115,7 @@ messages sent by registered clients */
 void	Server::handlePolling()
 {
 	_epollFd = epoll_create1(0);
-	if (_epollFd = -1)
+	if (_epollFd == -1)
 		throw std::runtime_error(std::string("epoll_create1 error: ") + std::strerror(errno));
 
 	// Add listening socket to monitoring list
