@@ -101,12 +101,18 @@ void	Server::receiveMessage(int fd)
 			throw std::runtime_error(std::string("recv error: ") + std::strerror(errno));
 		}
 		if (n == 0) {  // The client shutdown the connection
-			epoll_ctl(_epollFd, EPOLL_CTL_DEL, fd, NULL);
-			_client.erase(fd);
-			close(fd);
+			// epoll_ctl(_epollFd, EPOLL_CTL_DEL, fd, NULL);
+			// _client.erase(fd);
+			// close(fd);
+			disconnectClient(fd);
+			return;
 		}
 		else
-			std::cout.write(buf, n);  // to be replaced with more complex message handler
+		{
+			//std::cout.write(buf, n);  // to be replaced with more complex message handler
+			_client[fd].getMsgBuffer() += std::string(buf, n);
+			processBuffer(fd);
+		}
 	}
 }
 
