@@ -1,30 +1,31 @@
-#pragma once
+#ifndef SERVER_HPP
+#define SERVER_HPP
 
-#include <string>
-#include <sys/epoll.h>
 #include <map>
-
-#define MAXCONN 128
+#include <string>
 
 class Client;
+class Channel;
 
 class Server {
+public:
+	Server(int port, const std::string& password);
+	~Server();
+	void run();
+	void stop();
+	void addClient(int fd, const std::string& ip);
+	void removeClient(int fd);
+	Client* getClient(int fd);
+	Channel* getChannel(const std::string& name);
+	Channel* createChannel(const std::string& name, Client* creator);
+	const std::string& getPassword() const;
 
-	public:
-		Server() = delete;
-		Server(uint16_t port, std::string password);
-		~Server();
-
-		void createSocket();
-		void handlePolling();
-		void acceptNewClient(struct epoll_event &ev);
-		void receiveMessage(int fd);
-		void initServer();
-
-	private:
-		const uint16_t _port;
-		const std::string _password;
-		int _serFd{-1}; // listening socket file descriptor
-		int _epollFd{-1};
-		std::map<int, Client> _client;
+private:
+	int _port;
+	std::string _password;
+	bool _running;
+	std::map<int, Client*> _clients;
+	std::map<std::string, Channel*> _channels;
 };
+
+#endif

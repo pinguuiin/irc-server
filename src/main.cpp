@@ -1,51 +1,50 @@
-#include "../include/Server.hpp"
-
+#include "Server.hpp"
+#include <cstdlib>
 #include <iostream>
+#include <sstream>
+#include <string>
 
-int stringToPort(const char *s)
+static bool isAllDigits(const std::string& s)
 {
-	int num;
-
-	for (int i = 0; s[i]; ++i) {
-		if (!std::isdigit(s[i]))
-			return -1;
+	if (s.empty())
+		return false;
+	for (size_t i = 0; i < s.length(); ++i) {
+		if (s[i] < '0' || s[i] > '9')
+			return false;
 	}
-	num = std::atoi(s);
-	if (long long ll{std::atoll(s)}; num != ll)
-		return -1;
-	if (num >= 1024 && num <= 65535)
-		return num;
-	return -1;
+	return true;
 }
 
-int main(int argc, char *argv[])
+static int parsePort(const char* arg)
 {
-	int num;
+	std::string s(arg);
+	if (!isAllDigits(s))
+		return -1;
+	std::istringstream iss(s);
+	int p;
+	iss >> p;
+	if (p < 1 || p > 65535)
+		return -1;
+	return p;
+}
 
+int main(int argc, char** argv)
+{
 	if (argc != 3) {
-		std::cerr << "Invalid input. Only 2 arguments are allowed" << std::endl;
+		std::cerr << "Usage: " << argv[0] << " <port> <password>" << std::endl;
 		return 1;
 	}
-	num = stringToPort(argv[1]);
-	if (num == -1) {
-		std::cerr << "Invalid port. Available range 1024 - 65535" << std::endl;
+	int port = parsePort(argv[1]);
+	if (port < 0) {
+		std::cerr << "Error: invalid port" << std::endl;
 		return 1;
 	}
-
-	std::cout << "\n==================== IRC SERVER ====================\n" << std::endl;
-
-	Server server(num, argv[2]);
-
-	try {
-		server.initServer();
-
-		/* Anything else */
-
-	}
-	catch(const std::exception &e) {
-		std::cerr << e.what() << std::endl;
+	std::string password(argv[2]);
+	if (password.empty()) {
+		std::cerr << "Error: password must not be empty" << std::endl;
 		return 1;
 	}
-
+	Server server(port, password);
+	server.run();
 	return 0;
 }
