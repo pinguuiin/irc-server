@@ -1,31 +1,47 @@
+BRED=\033[1;31m
+BGREEN=\033[1;32m
+BYELLOW=\033[1;33m
+BBLUE=\033[1;34m
+BPURPLE=\033[1;35m
+RESET_COLOR=\033[0m
+
 NAME = ircserv
-CXX = c++
-CXXFLAGS = -Wall -Wextra -Werror -std=c++98 -I include
+CC = c++
+FLAGS = -Wall -Wextra -Werror -std=c++20
+HEADERS = -I./include
 
 SRC_DIR = src
-SRCS = $(SRC_DIR)/main.cpp \
-	$(SRC_DIR)/Server.cpp \
-	$(SRC_DIR)/Client.cpp \
-	$(SRC_DIR)/Channel.cpp \
-	$(SRC_DIR)/CommandParser.cpp \
-	$(SRC_DIR)/CommandHandler.cpp \
-	$(SRC_DIR)/Utils.cpp
+OBJ_DIR = obj
 
-OBJS = $(SRCS:.cpp=.o)
+SRCS = main.cpp \
+	   Server.cpp \
+	   Client.cpp \
+	   Channel.cpp \
+	   CommandHandler.cpp \
+	   CommandParser.cpp \
+	   Utils.cpp
+
+OBJS = $(addprefix $(OBJ_DIR)/, $(SRCS:.cpp=.o))
+
+.SECONDARY: $(OBJS)
 
 all: $(NAME)
 
-$(NAME): $(OBJS)
-	$(CXX) $(CXXFLAGS) $(OBJS) -o $(NAME)
+$(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
+	@mkdir -p $(dir $@)
+	$(CC) $(FLAGS) $(HEADERS) -c $< -o $@
 
-$(SRC_DIR)/%.o: $(SRC_DIR)/%.cpp
-	$(CXX) $(CXXFLAGS) -c $< -o $@
+$(NAME): $(OBJS)
+	$(CC) $(FLAGS) $(OBJS) -o $(NAME)
+	@echo "$(BGREEN)Compiled and linked.$(RESET_COLOR)"
 
 clean:
-	rm -f $(OBJS)
+	rm -rf $(OBJ_DIR)
+	@echo "$(BBLUE)All object files cleaned.$(RESET_COLOR)"
 
 fclean: clean
 	rm -f $(NAME)
+	@echo "$(BPURPLE)All cleaned up.$(RESET_COLOR)"
 
 re: fclean all
 

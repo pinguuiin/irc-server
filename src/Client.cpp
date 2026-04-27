@@ -2,11 +2,10 @@
 #include "Server.hpp"
 #include <iostream>
 
-Client::Client(int fd, const std::string& ip, Server* server)
+Client::Client(int fd, std::string ip, Server* server)
 	: _fd(fd), _ip(ip), _server(server), _authenticated(false)
 {
 	(void)_server;
-	std::cerr << "TODO: Client::Client" << std::endl;
 }
 
 Client::~Client()
@@ -14,9 +13,14 @@ Client::~Client()
 	std::cerr << "TODO: Client::~Client" << std::endl;
 }
 
-int Client::getFd() const
+const int& Client::getFd() const
 {
 	return _fd;
+}
+
+const std::string& Client::getIp() const
+{
+	return _ip;
 }
 
 const std::string& Client::getNickname() const
@@ -29,21 +33,29 @@ const std::string& Client::getUsername() const
 	return _username;
 }
 
+void Client::setFd(int fd)
+{
+	_fd = fd;
+}
+
+void Client::setIp(std::string ip)
+{
+	_ip = ip;
+}
+
+void Client::setNickname(std::string nick)
+{
+	_nickname = nick;
+}
+
+void Client::setUsername(std::string user)
+{
+	_username = user;
+}
+
 bool Client::isAuthenticated() const
 {
 	return _authenticated;
-}
-
-void Client::setNickname(const std::string& nick)
-{
-	(void)nick;
-	std::cerr << "TODO: Client::setNickname" << std::endl;
-}
-
-void Client::setUsername(const std::string& user)
-{
-	(void)user;
-	std::cerr << "TODO: Client::setUsername" << std::endl;
 }
 
 void Client::authenticate()

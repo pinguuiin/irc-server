@@ -1,50 +1,63 @@
 #include "Server.hpp"
-#include <cstdlib>
 #include <iostream>
 #include <sstream>
-#include <string>
 
 static bool isAllDigits(const std::string& s)
 {
 	if (s.empty())
 		return false;
 	for (size_t i = 0; i < s.length(); ++i) {
-		if (s[i] < '0' || s[i] > '9')
+		if (!std::isdigit(s[i]))
 			return false;
 	}
 	return true;
 }
 
-static int parsePort(const char* arg)
+static int stringToPort(const char* arg)
 {
 	std::string s(arg);
 	if (!isAllDigits(s))
 		return -1;
 	std::istringstream iss(s);
 	int p;
-	iss >> p;
-	if (p < 1 || p > 65535)
+	if (!(iss >> p))
+		return -1;
+	if (p < 1024 || p > 65535)
 		return -1;
 	return p;
 }
 
-int main(int argc, char** argv)
+int main(int argc, char *argv[])
 {
 	if (argc != 3) {
-		std::cerr << "Usage: " << argv[0] << " <port> <password>" << std::endl;
+		std::cerr << "Invalid input. Usage: " << argv[0] << " <port> <password>"
+				  << std::endl;
 		return 1;
 	}
-	int port = parsePort(argv[1]);
-	if (port < 0) {
-		std::cerr << "Error: invalid port" << std::endl;
+	int port = stringToPort(argv[1]);
+	if (port == -1) {
+		std::cerr << "Invalid port. Valid range: 1024 - 65535" << std::endl;
 		return 1;
 	}
 	std::string password(argv[2]);
 	if (password.empty()) {
-		std::cerr << "Error: password must not be empty" << std::endl;
+		std::cerr << "Invalid password. Password must not be empty" << std::endl;
 		return 1;
 	}
+
+	std::cout << "\n==================== IRC SERVER ====================\n" << std::endl;
+
 	Server server(port, password);
-	server.run();
+	try {
+		server.initServer();
+
+		/* Anything else */
+
+	}
+	catch(const std::exception &e) {
+		std::cerr << e.what() << std::endl;
+		return 1;
+	}
+
 	return 0;
 }
