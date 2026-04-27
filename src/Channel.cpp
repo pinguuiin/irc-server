@@ -24,7 +24,7 @@ const std::string& Channel::getTopic() const
 	return _topic;
 }
 
-void Channel::setTopic(const std::string& topic)
+void Channel::setTopic(std::string topic)
 {
 	(void)topic;
 	std::cerr << "TODO: Channel::setTopic" << std::endl;
@@ -52,7 +52,7 @@ bool Channel::checkKey(const std::string& key) const
 	return true;
 }
 
-void Channel::setKey(const std::string& key)
+void Channel::setKey(std::string key)
 {
 	_key = key;
 	std::cerr << "TODO: Channel::setKey" << std::endl;
