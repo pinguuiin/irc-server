@@ -23,10 +23,6 @@ SRCS = main.cpp \
 
 OBJS = $(addprefix $(OBJ_DIR)/, $(SRCS:.cpp=.o))
 
-.SECONDARY: $(OBJS)
-
-all: $(NAME)
-
 $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 	@mkdir -p $(dir $@)
 	$(CC) $(FLAGS) $(HEADERS) -c $< -o $@
@@ -34,6 +30,8 @@ $(OBJ_DIR)/%.o: $(SRC_DIR)/%.cpp
 $(NAME): $(OBJS)
 	$(CC) $(FLAGS) $(OBJS) -o $(NAME)
 	@echo "$(BGREEN)Compiled and linked.$(RESET_COLOR)"
+
+all: $(NAME)
 
 clean:
 	rm -rf $(OBJ_DIR)
@@ -46,3 +44,4 @@ fclean: clean
 re: fclean all
 
 .PHONY: all clean fclean re
+.SECONDARY: $(OBJS)

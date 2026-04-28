@@ -33,7 +33,13 @@ class Client {
 		std::string _nickname;
 		std::string _username;
 		bool _authenticated;
-		std::string _recvBuffer;
+		std::string _recvBuffer;	// incoming raw bytes waiting to be framed
+		std::string _sendBuffer; // outgoing bytes waiting to be flushed
 };
+// =====================================================================
+// We're adding _sendBuffer to the private section so sendMessage()
+// can store data that couldn't be sent yet (non-blocking socket).
+// The public interface (method signatures) is unchanged.
+// =====================================================================
 
 #endif
