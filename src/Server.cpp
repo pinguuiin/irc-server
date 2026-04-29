@@ -169,7 +169,7 @@ void Server::receiveMessage(int fd)
 		if (n == 0)  // The client shutdown the connection
 			removeClient(fd);
 		else
-			_clients.at(fd)->receiveData(n, buf);
+			_clients.at(fd)->receiveData(buf);
 	}
 }
 

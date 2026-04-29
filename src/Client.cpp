@@ -128,7 +128,7 @@ void Client::sendMessage(const std::string& msg)
 //   chunk 2: "ce 0 * :Alice\r\n"
 // After both calls _recvBuffer holds the full two lines, ready to be
 // extracted one at a time by getNextMessage().
-void Client::receiveData(ssize_t n, const char *buf)
+void Client::receiveData(const char *buf)
 {
     std::string data(buf);
 
