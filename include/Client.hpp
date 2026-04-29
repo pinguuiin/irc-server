@@ -23,7 +23,7 @@ class Client {
 		bool isAuthenticated() const;
 		void authenticate();
 		void sendMessage(const std::string& msg);
-		void receiveData(const std::string& data);
+		void receiveData(ssize_t n, const char *buf);
 		std::string getNextMessage();
 
 	private:

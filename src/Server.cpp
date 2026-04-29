@@ -36,7 +36,7 @@ void Server::initServer()
 }
 
 /* Create and set up the listening socket for Server */
-void	Server::createSocket()
+void Server::createSocket()
 {
 	// create and configure socket
 	int opt = 1;
@@ -67,7 +67,7 @@ void	Server::createSocket()
 
 /* Create epoll instance and start polling for new connection requests or
 messages sent by registered clients */
-void	Server::handlePolling()
+void Server::handlePolling()
 {
 	_epollFd = epoll_create1(0);
 	if (_epollFd == -1)
@@ -99,7 +99,7 @@ void	Server::handlePolling()
 
 /* Accept incoming connection request from the new client, register it to the
 interesting list of epoll, and add new client to client map */
-void	Server::acceptNewClient(struct epoll_event &ev)
+void Server::acceptNewClient(struct epoll_event &ev)
 {
 	int cliFd;
 	struct sockaddr_in addr;
@@ -131,8 +131,9 @@ void	Server::acceptNewClient(struct epoll_event &ev)
 
 void Server::removeClient(int fd)
 {
-	(void)fd;
-	std::cerr << "TODO: Server::removeClient" << std::endl;
+	epoll_ctl(_epollFd, EPOLL_CTL_DEL, fd, NULL);
+	_clients.erase(fd);
+	close(fd);
 }
 
 Client* Server::getClient(int fd)
@@ -152,7 +153,7 @@ Client* Server::getClientByNickname(const std::string& nickname)
 	return NULL;
 }
 
-void	Server::receiveMessage(int fd)
+void Server::receiveMessage(int fd)
 {
 	char buf[1024];
 	ssize_t n;
@@ -161,18 +162,14 @@ void	Server::receiveMessage(int fd)
 		memset(buf, 0, sizeof(buf));
 		n = recv(fd, buf, sizeof(buf), 0);
 		if (n < 0) {
-			if (errno == EAGAIN || errno == EWOULDBLOCK) { // End of input
+			if (errno == EAGAIN || errno == EWOULDBLOCK)  // End of input
 				return ;
-			}
 			throw std::runtime_error(std::string("recv error: ") + std::strerror(errno));
 		}
-		if (n == 0) {  // The client shutdown the connection
-			epoll_ctl(_epollFd, EPOLL_CTL_DEL, fd, NULL);
-			_clients.erase(fd);
-			close(fd);
-		}
+		if (n == 0)  // The client shutdown the connection
+			removeClient(fd);
 		else
-			std::cout.write(buf, n);  // to be replaced with more complex message handler
+			_clients.at(fd)->receiveData(n, buf);
 	}
 }
 
