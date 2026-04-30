@@ -1,5 +1,7 @@
 #include "../include/Client.hpp"
 #include "../include/Server.hpp"
+#include "../include/CommandParser.hpp"
+#include "../include/CommandHandler.hpp"
 #include <iostream>
 
 #include <sys/socket.h>	// for send()
@@ -131,10 +133,18 @@ void Client::sendMessage(const std::string& msg)
 void Client::receiveData(const char *buf)
 {
     std::string data(buf);
+    std::string msg;
 
 	_recvBuffer += data;
-    std::string line = getNextMessage();
-    std::cout << "TO DO: Parse message" << std::endl;
+    while (!(msg = getNextMessage()).empty()) {
+        const CommandParser::ParsedCommand& cmd = CommandParser::parse(msg);
+        if (CommandParser::validateCommand(cmd) == false) {
+            std::cerr << "Invalid command" << std::endl;
+            return ;
+        }
+        CommandHandler cmdhandler(_server);
+        cmdhandler.handleCommand(this, cmd);
+    }
 }
 
 // ── getNextMessage() ─────────────────────────────────────────────────
@@ -164,7 +174,7 @@ std::string Client::getNextMessage()
         return "";
 
     // If line exceeds 512-bytes limit (including "\r\n"), truncate it
-    std::string line = _recvBuffer.substr(0, std::min(pos, static_cast<size_t>(510)));
+    std::string msg = _recvBuffer.substr(0, std::min(pos, static_cast<size_t>(510)));
 
     // Remove the consumed line (including the "\r\n") from the buffer
     _recvBuffer.erase(0, pos + 2);
@@ -173,6 +183,6 @@ std::string Client::getNextMessage()
     // if (!line.empty() && line.back() == '\r')
     //     line.pop_back();
 
-    return line;
+    return msg;
 }
 

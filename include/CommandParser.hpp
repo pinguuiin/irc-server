@@ -12,7 +12,7 @@ class CommandParser {
 			std::vector<std::string> params;
 			std::string trailing;
 		};
-		static ParsedCommand parse(const std::string& message);
+		static ParsedCommand parse(const std::string& msg);
 		static bool validateCommand(const ParsedCommand& cmd);
 };
 
