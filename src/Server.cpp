@@ -137,7 +137,19 @@ void Server::removeClient(int fd)
 
 Client* Server::getClient(int fd)
 {
-	return _clients.at(fd);
+	std::map<int, Client*>::iterator it = _clients.find(fd);
+	if (it == _clients.end())
+		return NULL;
+	return it->second;
+}
+
+Client* Server::getClientByNickname(const std::string& nickname)
+{
+	for (std::map<int, Client*>::iterator it = _clients.begin(); it != _clients.end(); ++it) {
+		if (it->second != NULL && it->second->getNickname() == nickname)
+			return it->second;
+	}
+	return NULL;
 }
 
 void	Server::receiveMessage(int fd)
@@ -166,17 +178,20 @@ void	Server::receiveMessage(int fd)
 
 Channel* Server::getChannel(const std::string& name)
 {
-	(void)name;
-	std::cerr << "TODO: Server::getChannel" << std::endl;
-	return NULL;
+	std::map<std::string, Channel*>::iterator it = _channels.find(name);
+	if (it == _channels.end())
+		return NULL;
+	return it->second;
 }
 
 Channel* Server::createChannel(const std::string& name, Client* creator)
 {
-	(void)name;
-	(void)creator;
-	std::cerr << "TODO: Server::createChannel" << std::endl;
-	return NULL;
+	Channel* channel = getChannel(name);
+	if (channel != NULL)
+		return channel;
+	channel = new Channel(name, creator);
+	_channels.insert(std::make_pair(name, channel));
+	return channel;
 }
 
 const std::string& Server::getPassword() const
