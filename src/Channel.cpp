@@ -1,17 +1,18 @@
 #include "Channel.hpp"
 #include "Client.hpp"
-#include <iostream>
+#include <algorithm>
 
 Channel::Channel(const std::string& name, Client* creator)
-	: _name(name), _topic(""), _inviteOnly(false), _key(""), _userLimit(0)
+	: _name(name), _topic(""), _inviteOnly(false), _key(""), _topicRestricted(true), _userLimit(0)
 {
-	(void)creator;
-	std::cerr << "TODO: Channel::Channel" << std::endl;
+	if (creator != NULL) {
+		_clients.push_back(creator);
+		_operators.push_back(creator);
+	}
 }
 
 Channel::~Channel()
 {
-	std::cerr << "TODO: Channel::~Channel" << std::endl;
 }
 
 const std::string& Channel::getName() const
@@ -26,8 +27,7 @@ const std::string& Channel::getTopic() const
 
 void Channel::setTopic(std::string topic)
 {
-	(void)topic;
-	std::cerr << "TODO: Channel::setTopic" << std::endl;
+	_topic = topic;
 }
 
 bool Channel::isInviteOnly() const
@@ -47,15 +47,24 @@ bool Channel::hasKey() const
 
 bool Channel::checkKey(const std::string& key) const
 {
-	(void)key;
-	std::cerr << "TODO: Channel::checkKey" << std::endl;
-	return true;
+	if (!hasKey())
+		return true;
+	return _key == key;
 }
 
 void Channel::setKey(std::string key)
 {
 	_key = key;
-	std::cerr << "TODO: Channel::setKey" << std::endl;
+}
+
+bool Channel::isTopicRestricted() const
+{
+	return _topicRestricted;
+}
+
+void Channel::setTopicRestricted(bool restricted)
+{
+	_topicRestricted = restricted;
 }
 
 int Channel::getUserLimit() const
@@ -70,40 +79,79 @@ void Channel::setUserLimit(int limit)
 
 void Channel::addClient(Client* client)
 {
-	(void)client;
-	std::cerr << "TODO: Channel::addClient" << std::endl;
+	if (client == NULL || hasClient(client))
+		return;
+	if (_userLimit > 0 && static_cast<int>(_clients.size()) >= _userLimit)
+		return;
+	_clients.push_back(client);
+	clearInvite(client);
 }
 
 void Channel::removeClient(Client* client)
 {
-	(void)client;
-	std::cerr << "TODO: Channel::removeClient" << std::endl;
+	if (client == NULL)
+		return;
+	_clients.erase(std::remove(_clients.begin(), _clients.end(), client), _clients.end());
+	_operators.erase(std::remove(_operators.begin(), _operators.end(), client), _operators.end());
+	_invited.erase(std::remove(_invited.begin(), _invited.end(), client), _invited.end());
+}
+
+bool Channel::hasClient(Client* client) const
+{
+	if (client == NULL)
+		return false;
+	return std::find(_clients.begin(), _clients.end(), client) != _clients.end();
 }
 
 bool Channel::isOperator(Client* client) const
 {
-	(void)client;
-	std::cerr << "TODO: Channel::isOperator" << std::endl;
-	return false;
+	if (client == NULL)
+		return false;
+	return std::find(_operators.begin(), _operators.end(), client) != _operators.end();
 }
 
 void Channel::addOperator(Client* client)
 {
-	(void)client;
-	std::cerr << "TODO: Channel::addOperator" << std::endl;
+	if (client == NULL || !hasClient(client) || isOperator(client))
+		return;
+	_operators.push_back(client);
 }
 
 void Channel::removeOperator(Client* client)
 {
-	(void)client;
-	std::cerr << "TODO: Channel::removeOperator" << std::endl;
+	if (client == NULL)
+		return;
+	_operators.erase(std::remove(_operators.begin(), _operators.end(), client), _operators.end());
+}
+
+void Channel::inviteClient(Client* client)
+{
+	if (client == NULL)
+		return;
+	if (std::find(_invited.begin(), _invited.end(), client) == _invited.end())
+		_invited.push_back(client);
+}
+
+bool Channel::isInvited(Client* client) const
+{
+	if (client == NULL)
+		return false;
+	return std::find(_invited.begin(), _invited.end(), client) != _invited.end();
+}
+
+void Channel::clearInvite(Client* client)
+{
+	if (client == NULL)
+		return;
+	_invited.erase(std::remove(_invited.begin(), _invited.end(), client), _invited.end());
 }
 
 void Channel::broadcastMessage(const std::string& msg, Client* sender)
 {
-	(void)msg;
-	(void)sender;
-	std::cerr << "TODO: Channel::broadcastMessage" << std::endl;
+	for (std::vector<Client*>::iterator it = _clients.begin(); it != _clients.end(); ++it) {
+		if (*it != NULL && *it != sender)
+			(*it)->sendMessage(msg);
+	}
 }
 
 std::vector<Client*> Channel::getClients() const

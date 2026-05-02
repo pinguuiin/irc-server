@@ -25,6 +25,7 @@ class Server {
 		void acceptNewClient(struct epoll_event &ev);
 		void removeClient(int fd);
 		Client* getClient(int fd);
+		Client* getClientByNickname(const std::string& nickname);
 
 		void receiveMessage(int fd);
 

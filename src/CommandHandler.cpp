@@ -1,80 +1,342 @@
 #include "CommandHandler.hpp"
+#include "Channel.hpp"
 #include "Client.hpp"
 #include "Server.hpp"
-#include <iostream>
+#include "Utils.hpp"
+#include <cstdlib>
+
+namespace {
+	static std::string clientMask(Client* client)
+	{
+		std::string nick = client->getNickname().empty() ? "*" : client->getNickname();
+		std::string user = client->getUsername().empty() ? "unknown" : client->getUsername();
+		return nick + "!" + user + "@localhost";
+	}
+
+	static std::string errNeedMoreParams(const std::string& nick, const std::string& cmd)
+	{
+		return ":ircserv 461 " + nick + " " + cmd + " :Not enough parameters\r\n";
+	}
+
+	static std::string errNoSuchChannel(const std::string& nick, const std::string& channelName)
+	{
+		return ":ircserv 403 " + nick + " " + channelName + " :No such channel\r\n";
+	}
+
+	static std::string errNotOnChannel(const std::string& nick, const std::string& channelName)
+	{
+		return ":ircserv 442 " + nick + " " + channelName + " :You're not on that channel\r\n";
+	}
+
+	static std::string errChanOpPrivsNeeded(const std::string& nick, const std::string& channelName)
+	{
+		return ":ircserv 482 " + nick + " " + channelName + " :You're not channel operator\r\n";
+	}
+}
 
 CommandHandler::CommandHandler(Server* server)
 	: _server(server)
 {
-	std::cerr << "TODO: CommandHandler::CommandHandler" << std::endl;
 }
 
 void CommandHandler::handleCommand(Client* client, const CommandParser::ParsedCommand& cmd)
 {
-	(void)client;
-	(void)cmd;
-	std::cerr << "TODO: CommandHandler::handleCommand (server=" << _server << ")" << std::endl;
+	std::string command = Utils::toUpper(cmd.command);
+	std::vector<std::string> params = cmd.params;
+	if (!cmd.trailing.empty())
+		params.push_back(cmd.trailing);
+	if (command == "PASS")
+		handlePass(client, params);
+	else if (command == "NICK")
+		handleNick(client, params);
+	else if (command == "USER")
+		handleUser(client, params);
+	else if (command == "JOIN")
+		handleJoin(client, params);
+	else if (command == "PRIVMSG")
+		handlePrivmsg(client, params);
+	else if (command == "KICK")
+		handleKick(client, params);
+	else if (command == "INVITE")
+		handleInvite(client, params);
+	else if (command == "TOPIC")
+		handleTopic(client, params);
+	else if (command == "MODE")
+		handleMode(client, params);
 }
 
 void CommandHandler::handlePass(Client* client, const std::vector<std::string>& params)
 {
-	(void)client;
-	(void)params;
-	std::cerr << "TODO: CommandHandler::handlePass" << std::endl;
+	if (params.empty()) {
+		client->sendMessage(errNeedMoreParams(client->getNickname(), "PASS"));
+		return;
+	}
+	if (params[0] == _server->getPassword())
+		client->authenticate();
+	else
+		client->sendMessage(":ircserv 464 " + client->getNickname() + " :Password incorrect\r\n");
 }
 
 void CommandHandler::handleNick(Client* client, const std::vector<std::string>& params)
 {
-	(void)client;
-	(void)params;
-	std::cerr << "TODO: CommandHandler::handleNick" << std::endl;
+	if (params.empty()) {
+		client->sendMessage(errNeedMoreParams(client->getNickname(), "NICK"));
+		return;
+	}
+	if (!Utils::isValidNickname(params[0])) {
+		client->sendMessage(":ircserv 432 * " + params[0] + " :Erroneous nickname\r\n");
+		return;
+	}
+	client->setNickname(params[0]);
 }
 
 void CommandHandler::handleUser(Client* client, const std::vector<std::string>& params)
 {
-	(void)client;
-	(void)params;
-	std::cerr << "TODO: CommandHandler::handleUser" << std::endl;
+	if (params.empty()) {
+		client->sendMessage(errNeedMoreParams(client->getNickname(), "USER"));
+		return;
+	}
+	client->setUsername(params[0]);
 }
 
 void CommandHandler::handleJoin(Client* client, const std::vector<std::string>& params)
 {
-	(void)client;
-	(void)params;
-	std::cerr << "TODO: CommandHandler::handleJoin" << std::endl;
+	if (params.empty()) {
+		client->sendMessage(errNeedMoreParams(client->getNickname(), "JOIN"));
+		return;
+	}
+	const std::string& channelName = params[0];
+	if (!Utils::isValidChannelName(channelName)) {
+		client->sendMessage(":ircserv 476 " + client->getNickname() + " " + channelName + " :Bad Channel Mask\r\n");
+		return;
+	}
+
+	Channel* channel = _server->getChannel(channelName);
+	if (channel == NULL)
+		channel = _server->createChannel(channelName, client);
+	if (channel->hasClient(client))
+		return;
+
+	std::string key = params.size() > 1 ? params[1] : "";
+	if (channel->isInviteOnly() && !channel->isInvited(client)) {
+		client->sendMessage(":ircserv 473 " + client->getNickname() + " " + channelName + " :Cannot join channel (+i)\r\n");
+		return;
+	}
+	if (channel->hasKey() && !channel->checkKey(key)) {
+		client->sendMessage(":ircserv 475 " + client->getNickname() + " " + channelName + " :Cannot join channel (+k)\r\n");
+		return;
+	}
+	if (channel->getUserLimit() > 0 && static_cast<int>(channel->getClients().size()) >= channel->getUserLimit()) {
+		client->sendMessage(":ircserv 471 " + client->getNickname() + " " + channelName + " :Cannot join channel (+l)\r\n");
+		return;
+	}
+
+	channel->addClient(client);
+	std::string joinMsg = ":" + clientMask(client) + " JOIN :" + channelName + "\r\n";
+	channel->broadcastMessage(joinMsg, client);
+	client->sendMessage(joinMsg);
 }
 
 void CommandHandler::handlePrivmsg(Client* client, const std::vector<std::string>& params)
 {
-	(void)client;
-	(void)params;
-	std::cerr << "TODO: CommandHandler::handlePrivmsg" << std::endl;
+	if (params.size() < 2) {
+		client->sendMessage(errNeedMoreParams(client->getNickname(), "PRIVMSG"));
+		return;
+	}
+	const std::string& target = params[0];
+	const std::string& text = params[1];
+
+	if (!target.empty() && target[0] == '#') {
+		Channel* channel = _server->getChannel(target);
+		if (channel == NULL) {
+			client->sendMessage(errNoSuchChannel(client->getNickname(), target));
+			return;
+		}
+		if (!channel->hasClient(client)) {
+			client->sendMessage(errNotOnChannel(client->getNickname(), target));
+			return;
+		}
+		std::string msg = ":" + clientMask(client) + " PRIVMSG " + target + " :" + text + "\r\n";
+		channel->broadcastMessage(msg, client);
+		return;
+	}
+
+	Client* dst = _server->getClientByNickname(target);
+	if (dst == NULL) {
+		client->sendMessage(":ircserv 401 " + client->getNickname() + " " + target + " :No such nick\r\n");
+		return;
+	}
+	dst->sendMessage(":" + clientMask(client) + " PRIVMSG " + target + " :" + text + "\r\n");
 }
 
 void CommandHandler::handleKick(Client* client, const std::vector<std::string>& params)
 {
-	(void)client;
-	(void)params;
-	std::cerr << "TODO: CommandHandler::handleKick" << std::endl;
+	if (params.size() < 2) {
+		client->sendMessage(errNeedMoreParams(client->getNickname(), "KICK"));
+		return;
+	}
+	Channel* channel = _server->getChannel(params[0]);
+	if (channel == NULL) {
+		client->sendMessage(errNoSuchChannel(client->getNickname(), params[0]));
+		return;
+	}
+	if (!channel->isOperator(client)) {
+		client->sendMessage(errChanOpPrivsNeeded(client->getNickname(), params[0]));
+		return;
+	}
+
+	Client* target = _server->getClientByNickname(params[1]);
+	if (target == NULL || !channel->hasClient(target)) {
+		client->sendMessage(":ircserv 441 " + client->getNickname() + " " + params[1] + " " + params[0] + " :They aren't on that channel\r\n");
+		return;
+	}
+	std::string reason = params.size() > 2 ? params[2] : client->getNickname();
+	std::string kickMsg = ":" + clientMask(client) + " KICK " + params[0] + " " + params[1] + " :" + reason + "\r\n";
+	channel->broadcastMessage(kickMsg, NULL);
+	target->sendMessage(kickMsg);
+	channel->removeClient(target);
 }
 
 void CommandHandler::handleInvite(Client* client, const std::vector<std::string>& params)
 {
-	(void)client;
-	(void)params;
-	std::cerr << "TODO: CommandHandler::handleInvite" << std::endl;
+	if (params.size() < 2) {
+		client->sendMessage(errNeedMoreParams(client->getNickname(), "INVITE"));
+		return;
+	}
+	Client* target = _server->getClientByNickname(params[0]);
+	if (target == NULL) {
+		client->sendMessage(":ircserv 401 " + client->getNickname() + " " + params[0] + " :No such nick\r\n");
+		return;
+	}
+
+	Channel* channel = _server->getChannel(params[1]);
+	if (channel == NULL) {
+		client->sendMessage(errNoSuchChannel(client->getNickname(), params[1]));
+		return;
+	}
+	if (!channel->hasClient(client)) {
+		client->sendMessage(errNotOnChannel(client->getNickname(), params[1]));
+		return;
+	}
+	if (!channel->isOperator(client)) {
+		client->sendMessage(errChanOpPrivsNeeded(client->getNickname(), params[1]));
+		return;
+	}
+
+	channel->inviteClient(target);
+	target->sendMessage(":" + clientMask(client) + " INVITE " + target->getNickname() + " :" + params[1] + "\r\n");
+	client->sendMessage(":ircserv 341 " + client->getNickname() + " " + target->getNickname() + " " + params[1] + "\r\n");
 }
 
 void CommandHandler::handleTopic(Client* client, const std::vector<std::string>& params)
 {
-	(void)client;
-	(void)params;
-	std::cerr << "TODO: CommandHandler::handleTopic" << std::endl;
+	if (params.empty()) {
+		client->sendMessage(errNeedMoreParams(client->getNickname(), "TOPIC"));
+		return;
+	}
+	Channel* channel = _server->getChannel(params[0]);
+	if (channel == NULL) {
+		client->sendMessage(errNoSuchChannel(client->getNickname(), params[0]));
+		return;
+	}
+	if (!channel->hasClient(client)) {
+		client->sendMessage(errNotOnChannel(client->getNickname(), params[0]));
+		return;
+	}
+
+	if (params.size() == 1) {
+		if (channel->getTopic().empty())
+			client->sendMessage(":ircserv 331 " + client->getNickname() + " " + params[0] + " :No topic is set\r\n");
+		else
+			client->sendMessage(":ircserv 332 " + client->getNickname() + " " + params[0] + " :" + channel->getTopic() + "\r\n");
+		return;
+	}
+
+	if (channel->isTopicRestricted() && !channel->isOperator(client)) {
+		client->sendMessage(errChanOpPrivsNeeded(client->getNickname(), params[0]));
+		return;
+	}
+	channel->setTopic(params[1]);
+	channel->broadcastMessage(":" + clientMask(client) + " TOPIC " + params[0] + " :" + params[1] + "\r\n", NULL);
+	client->sendMessage(":" + clientMask(client) + " TOPIC " + params[0] + " :" + params[1] + "\r\n");
 }
 
 void CommandHandler::handleMode(Client* client, const std::vector<std::string>& params)
 {
-	(void)client;
-	(void)params;
-	std::cerr << "TODO: CommandHandler::handleMode" << std::endl;
+	if (params.size() < 2) {
+		client->sendMessage(errNeedMoreParams(client->getNickname(), "MODE"));
+		return;
+	}
+	Channel* channel = _server->getChannel(params[0]);
+	if (channel == NULL) {
+		client->sendMessage(errNoSuchChannel(client->getNickname(), params[0]));
+		return;
+	}
+	if (!channel->isOperator(client)) {
+		client->sendMessage(errChanOpPrivsNeeded(client->getNickname(), params[0]));
+		return;
+	}
+
+	const std::string& mode = params[1];
+	if (mode.size() < 2 || (mode[0] != '+' && mode[0] != '-')) {
+		client->sendMessage(":ircserv 472 " + client->getNickname() + " " + mode + " :is unknown mode char to me\r\n");
+		return;
+	}
+
+	bool set = mode[0] == '+';
+	char flag = mode[1];
+	if (flag == 'i')
+		channel->setInviteOnly(set);
+	else if (flag == 't')
+		channel->setTopicRestricted(set);
+	else if (flag == 'k') {
+		if (set) {
+			if (params.size() < 3) {
+				client->sendMessage(errNeedMoreParams(client->getNickname(), "MODE"));
+				return;
+			}
+			channel->setKey(params[2]);
+		} else {
+			channel->setKey("");
+		}
+	} else if (flag == 'o') {
+		if (params.size() < 3) {
+			client->sendMessage(errNeedMoreParams(client->getNickname(), "MODE"));
+			return;
+		}
+		Client* target = _server->getClientByNickname(params[2]);
+		if (target == NULL || !channel->hasClient(target)) {
+			client->sendMessage(":ircserv 441 " + client->getNickname() + " " + params[2] + " " + params[0] + " :They aren't on that channel\r\n");
+			return;
+		}
+		if (set)
+			channel->addOperator(target);
+		else
+			channel->removeOperator(target);
+	} else if (flag == 'l') {
+		if (set) {
+			if (params.size() < 3) {
+				client->sendMessage(errNeedMoreParams(client->getNickname(), "MODE"));
+				return;
+			}
+			int limit = std::atoi(params[2].c_str());
+			if (limit <= 0) {
+				client->sendMessage(":ircserv 696 " + client->getNickname() + " " + params[0] + " l " + params[2] + " :Invalid limit\r\n");
+				return;
+			}
+			channel->setUserLimit(limit);
+		} else {
+			channel->setUserLimit(0);
+		}
+	} else {
+		client->sendMessage(":ircserv 472 " + client->getNickname() + " " + std::string(1, flag) + " :is unknown mode char to me\r\n");
+		return;
+	}
+
+	std::string modeMsg = ":" + clientMask(client) + " MODE " + params[0] + " " + mode;
+	if ((flag == 'k' || flag == 'o' || (flag == 'l' && set)) && params.size() > 2)
+		modeMsg += " " + params[2];
+	modeMsg += "\r\n";
+	channel->broadcastMessage(modeMsg, NULL);
+	client->sendMessage(modeMsg);
 }
