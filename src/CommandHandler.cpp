@@ -13,6 +13,11 @@ namespace {
 		return nick + "!" + user + "@localhost";
 	}
 
+	static std::string errUnknownCommand(const std::string& nick, const std::string& cmd)
+	{
+		return ":ircserv 421 " + nick + " " + cmd + " :Unknown command\r\n";
+	}
+
 	static std::string errNeedMoreParams(const std::string& nick, const std::string& cmd)
 	{
 		return ":ircserv 461 " + nick + " " + cmd + " :Not enough parameters\r\n";
@@ -63,6 +68,8 @@ void CommandHandler::handleCommand(Client* client, const CommandParser::ParsedCo
 		handleTopic(client, params);
 	else if (command == "MODE")
 		handleMode(client, params);
+	else
+		client->sendMessage(errUnknownCommand(client->getNickname(), command));
 }
 
 void CommandHandler::handlePass(Client* client, const std::vector<std::string>& params)

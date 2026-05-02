@@ -138,10 +138,9 @@ void Client::receiveData(const char *buf)
 	_recvBuffer += data;
     while (!(msg = getNextMessage()).empty()) {
         const CommandParser::ParsedCommand& cmd = CommandParser::parse(msg);
-        if (CommandParser::validateCommand(cmd) == false) {
-            std::cerr << "Invalid command" << std::endl;
+        // ignore invalid commands with empty command name
+        if (CommandParser::validateCommand(cmd) == false)
             return ;
-        }
         CommandHandler cmdhandler(_server);
         cmdhandler.handleCommand(this, cmd);
     }
