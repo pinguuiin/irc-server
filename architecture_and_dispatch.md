@@ -54,7 +54,6 @@ Single **process**, **single-threaded** event loop: one **listening socket** and
 1. **Startup:** `main` parses arguments, creates `Server(port, password)`, calls `run()`.
 2. **Listen:** Server creates listening socket, binds to port, adds listen FD to poll set.
 3. **Accept:** On listen FD readable, `accept` → `addClient(fd, ip)` → allocate `Client`, store in map by fd, add client fd to poll set.
-4. **Read:** On client FD readable, read into a stack or heap buffer, append via `Client::receiveData`. Loop: while `getNextMessage()` returns non-empty, treat each as one IRC message (trailing `\r\n` stripped in parser or client layer — team convention).
 5. **Dispatch:** `CommandParser::parse` → if needed `validateCommand` → `CommandHandler::handleCommand`. Handler uses `Server::getPassword`, `getClient`, `getChannel`, `createChannel`, and `Client`/`Channel` methods; sends replies with `Client::sendMessage`.
 6. **Write:** When a client FD is writable, drain that client’s outbound buffer (non-blocking `send`); if incomplete, wait for next writable event.
 7. **Disconnect / errors:** Remove fd from poll set, `removeClient`, destroy `Client`; update or destroy `Channel` membership as needed.
