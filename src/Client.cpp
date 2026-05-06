@@ -1,142 +1,171 @@
 #include "../include/Client.hpp"
-#include <utility> // for std::move
-#include <sys/socket.h>
-#include <cerrno>
-#include <cstring>
+#include "../include/Server.hpp"
 #include <iostream>
 
-Client::Client() noexcept
-    : _clientFd(-1), _isRegistered(false), _isConnected(false), _isOperator(false), _host("") {}
+#include <sys/socket.h>	// for send()
+#include <cerrno>		// for errno, EAGAIN, EWOULDBLOCK
+#include <iostream>
+#include <cstring>		// for strerror()
 
-Client::Client(int fd, std::string host)
-    : _clientFd(fd), _isRegistered(false), _isConnected(true), _isOperator(false), _host(std::move(host)) {}
-
-Client::Client(const Client& other)
-    : _clientFd(other._clientFd), _isRegistered(other._isRegistered), _isConnected(other._isConnected),
-      _isOperator(other._isOperator), _nickName(other._nickName), _userName(other._userName),
-      _fullName(other._fullName), _host(other._host), _modes(other._modes),
-      _joinedChannels(other._joinedChannels), _invitedChannels(other._invitedChannels),
-      _sendBuffer(other._sendBuffer), _recvBuffer(other._recvBuffer) {}
-
-Client::Client(Client&& other) noexcept
-    : _clientFd(other._clientFd), _isRegistered(other._isRegistered), _isConnected(other._isConnected),
-      _isOperator(other._isOperator), _nickName(std::move(other._nickName)), _userName(std::move(other._userName)),
-      _fullName(std::move(other._fullName)), _host(std::move(other._host)), _modes(other._modes),
-      _joinedChannels(std::move(other._joinedChannels)), _invitedChannels(std::move(other._invitedChannels)),
-      _sendBuffer(std::move(other._sendBuffer)), _recvBuffer(std::move(other._recvBuffer)) {
-    other._clientFd = -1;
-    other._isRegistered = false;
-    other._isConnected = false;
-    other._isOperator = false;
+Client::Client(int fd, std::string ip, Server* server)
+	: _fd(fd), _ip(ip), _server(server), _authenticated(false)
+{
+	(void)_server;
 }
 
-Client::~Client() noexcept {}
-
-Client& Client::operator=(const Client& other) {
-    if (this != &other) {
-        _clientFd = other._clientFd;
-        _isRegistered = other._isRegistered;
-        _isConnected = other._isConnected;
-        _isOperator = other._isOperator;
-        _nickName = other._nickName;
-        _userName = other._userName;
-        _fullName = other._fullName;
-        // _host is const, can't assign
-        _modes = other._modes;
-        _joinedChannels = other._joinedChannels;
-        _invitedChannels = other._invitedChannels;
-        _sendBuffer = other._sendBuffer;
-        _recvBuffer = other._recvBuffer;
-    }
-    return *this;
-}
-
-Client& Client::operator=(Client&& other) noexcept {
-    if (this != &other) {
-        _clientFd = other._clientFd;
-        _isRegistered = other._isRegistered;
-        _isConnected = other._isConnected;
-        _isOperator = other._isOperator;
-        _nickName = std::move(other._nickName);
-        _userName = std::move(other._userName);
-        _fullName = std::move(other._fullName);
-        // _host const
-        _modes = other._modes;
-        _joinedChannels = std::move(other._joinedChannels);
-        _invitedChannels = std::move(other._invitedChannels);
-        _sendBuffer = std::move(other._sendBuffer);
-        _recvBuffer = std::move(other._recvBuffer);
-        other._clientFd = -1;
-        other._isRegistered = false;
-        other._isConnected = false;
-        other._isOperator = false;
-    }
-    return *this;
+// Intentionally empty - Server is responsible for closing _fd when client disconnects.
+Client::~Client()
+{
 }
 
 // Getters
-int Client::getClientFd() const noexcept { return _clientFd; }
-bool Client::getRegistration() const noexcept { return _isRegistered; }
-bool Client::getConnection() const noexcept { return _isConnected; }
-const std::string& Client::getNickName() const noexcept { return _nickName; }
-const std::string& Client::getUserName() const noexcept { return _userName; }
-const std::string& Client::getFullName() const noexcept { return _fullName; }
-const std::string& Client::getHost() const noexcept { return _host; }
-std::string Client::getUserPrefix() const { return _nickName + "!" + _userName + "@" + _host; }
-const Modes& Client::getModes() const noexcept { return _modes; }
-const std::map<std::string, Channel*>& Client::getJoinedChannels() const noexcept { return _joinedChannels; }
-const std::map<std::string, Channel*>& Client::getInvitedChannels() const noexcept { return _invitedChannels; }
+const int& Client::getFd() const
+{
+	return _fd;
+}
+
+const std::string& Client::getIp() const
+{
+	return _ip;
+}
+
+const std::string& Client::getNickname() const
+{
+	return _nickname;
+}
+
+const std::string& Client::getUsername() const
+{
+	return _username;
+}
 
 // Setters
-void Client::setClientFd(int fd) noexcept { _clientFd = fd; }
-void Client::setRegistration(bool value) noexcept { _isRegistered = value; }
-void Client::setConnection(bool value) noexcept { _isConnected = value; }
-void Client::setNickName(std::string nickName) { _nickName = std::move(nickName); }
-void Client::setUserName(std::string userName) { _userName = std::move(userName); }
-void Client::setFullName(std::string fullName) { _fullName = std::move(fullName); }
-void Client::setOperator(bool value) noexcept { _isOperator = value; }
+void Client::setFd(int fd)
+{
+	_fd = fd;
+}
 
-std::string Client::setMode(std::string mode) {
-    // Simple implementation, assume mode is like "+i" or "-i"
-    if (mode.size() >= 2) {
-        char sign = mode[0];
-        char flag = mode[1];
-        bool set = (sign == '+');
-        switch (flag) {
-            case 'a': _modes.away = set; break;
-            case 'i': _modes.invisible = set; break;
-            case 'w': _modes.wallops = set; break;
-            case 'r': _modes.restricted = set; break;
-            case 'o': _modes.op = set; break;
-            case 'O': _modes.localOp = set; break;
-            case 's': _modes.server = set; break;
+void Client::setIp(std::string ip)
+{
+	_ip = ip;
+}
+
+void Client::setNickname(std::string nick)
+{
+	_nickname = nick;
+}
+
+void Client::setUsername(std::string user)
+{
+	_username = user;
+}
+
+bool Client::isAuthenticated() const
+{
+	return _authenticated;
+}
+
+// Called by CommandHandler once PASS + NICK + USER have all been received and validated.
+void Client::authenticate()
+{
+	_authenticated = true;
+}
+
+// ── sendMessage() ────────────────────────────────────────────────────
+// Queues 'msg' for sending and immediately tries to flush the queue.
+//
+// WHY a buffer at all?
+//   The socket is non-blocking.  send() may not send every byte in one
+//   call (e.g. the kernel's send-buffer is full).  We store whatever
+//   didn't go out in _sendBuffer and try again next time sendMessage()
+//   is called.  For IRC (messages ≤ 512 bytes) this almost never
+//   matters in practice, but it's the correct approach.
+//
+// HOW the flush loop works:
+//   1. Append the new message to _sendBuffer.
+//   2. Keep calling send() until the buffer is empty or send() blocks.
+//   3. If send() says EAGAIN/EWOULDBLOCK the socket isn't ready yet —
+//      just return and leave the data in _sendBuffer for next time.
+//   4. If send() returns a real error, print it and give up.  In a
+//      production server you'd also disconnect the client here.
+void Client::sendMessage(const std::string& msg)
+{
+	// Step 1 - queue the new data
+	_sendBuffer += msg; // Append to send buffer
+
+	// Step 2 - try to drain the queue
+	while (!_sendBuffer.empty())
+	{
+		 // send() returns how many bytes it actually sent.
+        // MSG_NOSIGNAL prevents the process from dying on a broken pipe
+        // (happens when the client disconnects mid-send on Linux).
+        ssize_t sent = send(_fd, _sendBuffer.c_str(), _sendBuffer.size(), MSG_NOSIGNAL);
+
+        if (sent < 0)
+        {
+            // Step 3 — socket buffer is full; try again later
+            if (errno == EAGAIN || errno == EWOULDBLOCK)
+                return;
+
+            // Step 4 — real error (e.g. client hung up)
+            std::cerr << "Client fd=" << _fd
+                      << ": send() error: " << std::strerror(errno) << "\n";
+            return;
         }
-    }
-    return mode; // Return the mode string, perhaps for response
+
+        // Erase the bytes that were successfully sent.
+        // substr from 'sent' keeps whatever wasn't sent yet.
+        _sendBuffer.erase(0, static_cast<size_t>(sent));
+	}
+}
+// ── receiveData() ────────────────────────────────────────────────────
+// Server::receiveMessage() reads raw bytes from the socket and passes
+// them here as a std::string chunk.  We just append to _recvBuffer;
+// the actual line-framing happens in getNextMessage().
+//
+// Example: two recv() calls might give us:
+//   chunk 1: "NICK alice\r\nUSER ali"
+//   chunk 2: "ce 0 * :Alice\r\n"
+// After both calls _recvBuffer holds the full two lines, ready to be
+// extracted one at a time by getNextMessage().
+void Client::receiveData(const std::string& data)
+{
+	_recvBuffer += data;
 }
 
-void Client::addInvitedChannel(std::string channelName, Channel* channel) {
-    _invitedChannels[std::move(channelName)] = channel;
-}
+// ── getNextMessage() ─────────────────────────────────────────────────
+// Returns ONE complete IRC line from _recvBuffer, without its line
+// ending.  Returns an empty string if no complete line is ready yet.
+//
+// IRC line endings are \r\n (CRLF).  We look for '\n' and then strip
+// a trailing '\r' if present — this handles both "\r\n" and bare "\n".
+//
+// Typical usage in Server (loop until no more complete lines):
+//
+//   std::string line;
+//   while (!(line = client->getNextMessage()).empty())
+//   {
+//       auto cmd = CommandParser::parse(line);
+//       handler->handleCommand(client, cmd);
+//   }
+std::string Client::getNextMessage()
+{
+	// Find the first newline in the buffer
+    auto pos = _recvBuffer.find('\n');
 
-void Client::addChannel(std::string channelName, Channel* channel) {
-    _joinedChannels[std::move(channelName)] = channel;
-}
+    // No '\n' found — we don't have a complete line yet
+    if (pos == std::string::npos)
+        return "";
 
-void Client::partFromChannel(Channel* channel) {
-    // Assuming Channel has getName()
-    auto it = _joinedChannels.find(channel->getName());
-    if (it != _joinedChannels.end()) {
-        _joinedChannels.erase(it);
-    }
-}
+    // Extract everything before the '\n'
+    std::string line = _recvBuffer.substr(0, pos);
 
-bool Client::isInvitedTo(Channel* invitedChannel) const {
-    // Assuming Channel has getName()
-    return _invitedChannels.find(invitedChannel->getName()) != _invitedChannels.end();
-}
+    // Remove the consumed line (including the '\n') from the buffer
+    _recvBuffer.erase(0, pos + 1);
 
-bool Client::hasNoChannel() const noexcept {
-    return _joinedChannels.empty();
-}
+    // Strip a trailing '\r' so callers never see it
+    if (!line.empty() && line.back() == '\r')
+        line.pop_back();
 
+    return line;
+}
