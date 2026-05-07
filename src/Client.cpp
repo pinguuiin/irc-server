@@ -1,5 +1,7 @@
 #include "../include/Client.hpp"
 #include "../include/Server.hpp"
+#include "../include/CommandParser.hpp"
+#include "../include/CommandHandler.hpp"
 #include <iostream>
 
 #include <sys/socket.h>	// for send()
@@ -128,9 +130,20 @@ void Client::sendMessage(const std::string& msg)
 //   chunk 2: "ce 0 * :Alice\r\n"
 // After both calls _recvBuffer holds the full two lines, ready to be
 // extracted one at a time by getNextMessage().
-void Client::receiveData(const std::string& data)
+void Client::receiveData(const char *buf)
 {
+    std::string data(buf);
+    std::string msg;
+
 	_recvBuffer += data;
+    while (!(msg = getNextMessage()).empty()) {
+        const CommandParser::ParsedCommand& cmd = CommandParser::parse(msg);
+        // ignore invalid commands with empty command name
+        if (CommandParser::validateCommand(cmd) == false)
+            return ;
+        CommandHandler cmdhandler(_server);
+        cmdhandler.handleCommand(this, cmd);
+    }
 }
 
 // ── getNextMessage() ─────────────────────────────────────────────────
@@ -148,24 +161,27 @@ void Client::receiveData(const std::string& data)
 //       auto cmd = CommandParser::parse(line);
 //       handler->handleCommand(client, cmd);
 //   }
+//
+// ── The updated version only accepts line ending with "\r\n"──────────
 std::string Client::getNextMessage()
 {
 	// Find the first newline in the buffer
-    auto pos = _recvBuffer.find('\n');
+    auto pos = _recvBuffer.find("\r\n");
 
-    // No '\n' found — we don't have a complete line yet
+    // No '\r\n' found — we don't have a complete line yet
     if (pos == std::string::npos)
         return "";
 
-    // Extract everything before the '\n'
-    std::string line = _recvBuffer.substr(0, pos);
+    // If line exceeds 512-bytes limit (including "\r\n"), truncate it
+    std::string msg = _recvBuffer.substr(0, std::min(pos, static_cast<size_t>(510)));
 
-    // Remove the consumed line (including the '\n') from the buffer
-    _recvBuffer.erase(0, pos + 1);
+    // Remove the consumed line (including the "\r\n") from the buffer
+    _recvBuffer.erase(0, pos + 2);
 
-    // Strip a trailing '\r' so callers never see it
-    if (!line.empty() && line.back() == '\r')
-        line.pop_back();
+    // // Strip a trailing '\r' so callers never see it
+    // if (!line.empty() && line.back() == '\r')
+    //     line.pop_back();
 
-    return line;
+    return msg;
 }
+
