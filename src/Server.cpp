@@ -76,10 +76,11 @@ void Server::handlePolling()
 	// Add listening socket to monitoring list
 	struct epoll_event ev, events[MAXCONN];
 
+	// listening socket handles only read (accepting new connection request)
 	ev.events = EPOLLIN;
 	ev.data.fd = _serFd;
 	if (epoll_ctl(_epollFd, EPOLL_CTL_ADD, _serFd, &ev) == -1)
-		throw std::runtime_error(std::string("epoll_ctl error: ") + std::strerror(errno));
+		throw std::runtime_error(std::string("epoll_ctl_add error: ") + std::strerror(errno));
 
 	// Poll on monitored sockets
 	int n, nfds;
@@ -91,8 +92,10 @@ void Server::handlePolling()
 		for (n = 0; n < nfds; ++n) {
 			if (events[n].data.fd == _serFd)
 				acceptNewClient(ev);
-			else
+			else if (events[n].events == EPOLLIN)
 				receiveMessage(events[n].data.fd);
+			else if (events[n].events == EPOLLOUT)
+				sendMessage(events[n].data.fd);
 		}
 	}
 }
@@ -116,10 +119,11 @@ void Server::acceptNewClient(struct epoll_event &ev)
 	_newCliFd = cliFd;
 	if (fcntl(cliFd, F_SETFL, O_NONBLOCK) == -1)
 		throw std::runtime_error(std::string("fcntl error: ") + std::strerror(errno));
-	ev.events = EPOLLIN; // not sure whether to add EPOLLET
+	// Client sockets monitor both read and write
+	ev.events = EPOLLIN | EPOLLOUT; // not sure whether to add EPOLLET
 	ev.data.fd = cliFd;
 	if (epoll_ctl(_epollFd, EPOLL_CTL_ADD, cliFd, &ev) == -1)
-		throw std::runtime_error(std::string("epoll_ctl error: ") + std::strerror(errno));
+		throw std::runtime_error(std::string("epoll_ctl_add error: ") + std::strerror(errno));
 
 	// Create new client instance and add it to server
 	if (inet_ntop(AF_INET, &(addr.sin_addr), ipBuf, INET_ADDRSTRLEN) == NULL)
@@ -131,7 +135,8 @@ void Server::acceptNewClient(struct epoll_event &ev)
 
 void Server::removeClient(int fd)
 {
-	epoll_ctl(_epollFd, EPOLL_CTL_DEL, fd, NULL);
+	if (epoll_ctl(_epollFd, EPOLL_CTL_DEL, fd, NULL) == -1)
+		throw std::runtime_error(std::string("epoll_ctl_del error: ") + std::strerror(errno));
 	_clients.erase(fd);
 	close(fd);
 }
@@ -169,8 +174,51 @@ void Server::receiveMessage(int fd)
 		if (n == 0)  // The client shutdown the connection
 			removeClient(fd);
 		else
-			_clients.at(fd)->receiveData(buf);
+		{
+			Client* client = getClient(fd);
+			if (!client)
+				throw std::runtime_error(std::string("program error: client not in the list"));
+			client->receiveAndHandleMessage(buf);
+		}
 	}
+}
+
+void Server::queueMessage(int fd, const std::string& msg)
+{
+	Client* client = getClient(fd);
+
+	if (!client)
+		throw std::runtime_error(std::string("program error: client not in the list"));
+	client->appendSendBuffer(msg);
+	enableWriteEvent(fd);
+}
+
+void Server::sendMessage(int fd)
+{
+	_clients.at(fd)->sendPendingMessage();
+	disableWriteEvent(fd);
+}
+
+void Server::enableWriteEvent(int fd)
+{
+	epoll_event ev;
+
+	ev.events = EPOLLIN | EPOLLOUT;
+	ev.data.fd = fd;
+
+	if (epoll_ctl(_epollFd, EPOLL_CTL_MOD, fd, &ev) == -1)
+		throw std::runtime_error(std::string("epoll_ctl_mod error: ") + std::strerror(errno));
+}
+
+void Server::disableWriteEvent(int fd)
+{
+	epoll_event ev;
+
+	ev.events = EPOLLIN;
+	ev.data.fd = fd;
+
+	if (epoll_ctl(_epollFd, EPOLL_CTL_MOD, fd, &ev) == -1)
+		throw std::runtime_error(std::string("epoll_ctl_mod error: ") + std::strerror(errno));
 }
 
 Channel* Server::getChannel(const std::string& name)

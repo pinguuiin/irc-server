@@ -28,6 +28,11 @@ class Server {
 		Client* getClientByNickname(const std::string& nickname);
 
 		void receiveMessage(int fd);
+		void queueMessage(int fd, const std::string& msg);
+		void sendMessage(int fd);
+
+		void enableWriteEvent(int fd);
+		void disableWriteEvent(int fd);
 
 		Channel* getChannel(const std::string& name);
 		Channel* createChannel(const std::string& name, Client* creator);

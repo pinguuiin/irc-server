@@ -90,12 +90,15 @@ void Client::authenticate()
 //      just return and leave the data in _sendBuffer for next time.
 //   4. If send() returns a real error, print it and give up.  In a
 //      production server you'd also disconnect the client here.
-void Client::sendMessage(const std::string& msg)
+void Client::appendSendBuffer(const std::string& msg)
 {
-	// Step 1 - queue the new data
+	// Step 0 - queue the new data
 	_sendBuffer += msg; // Append to send buffer
+}
 
-	// Step 2 - try to drain the queue
+void Client::sendPendingMessage()
+{
+	// Step 1 - try to drain the queue
 	while (!_sendBuffer.empty())
 	{
 		 // send() returns how many bytes it actually sent.
@@ -105,11 +108,11 @@ void Client::sendMessage(const std::string& msg)
 
         if (sent < 0)
         {
-            // Step 3 — socket buffer is full; try again later
+            // Step 2 — socket buffer is full; try again later
             if (errno == EAGAIN || errno == EWOULDBLOCK)
                 return;
 
-            // Step 4 — real error (e.g. client hung up)
+            // Step 3 — real error (e.g. client hung up)
             std::cerr << "Client fd=" << _fd
                       << ": send() error: " << std::strerror(errno) << "\n";
             return;
@@ -130,7 +133,7 @@ void Client::sendMessage(const std::string& msg)
 //   chunk 2: "ce 0 * :Alice\r\n"
 // After both calls _recvBuffer holds the full two lines, ready to be
 // extracted one at a time by getNextMessage().
-void Client::receiveData(const char *buf)
+void Client::receiveAndHandleMessage(const char *buf)
 {
     std::string data(buf);
     std::string msg;

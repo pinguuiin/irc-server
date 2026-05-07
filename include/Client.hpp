@@ -22,8 +22,10 @@ class Client {
 
 		bool isAuthenticated() const;
 		void authenticate();
-		void sendMessage(const std::string& msg);
-		void receiveData(const char *buf);
+
+		void receiveAndHandleMessage(const char *buf);
+		void appendSendBuffer(const std::string& msg);
+		void sendPendingMessage();
 		std::string getNextMessage();
 
 	private:
