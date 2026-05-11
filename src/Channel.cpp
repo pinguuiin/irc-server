@@ -1,9 +1,10 @@
 #include "Channel.hpp"
 #include "Client.hpp"
+#include "Server.hpp"
 #include <algorithm>
 
-Channel::Channel(const std::string& name, Client* creator)
-	: _name(name), _topic(""), _inviteOnly(false), _key(""), _topicRestricted(true), _userLimit(0)
+Channel::Channel(const std::string& name, Client* creator, Server* server)
+	: _name(name), _topic(""), _inviteOnly(false), _key(""), _topicRestricted(true), _userLimit(0), _server(server)
 {
 	if (creator != NULL) {
 		_clients.push_back(creator);
@@ -149,8 +150,8 @@ void Channel::clearInvite(Client* client)
 void Channel::broadcastMessage(const std::string& msg, Client* sender)
 {
 	for (std::vector<Client*>::iterator it = _clients.begin(); it != _clients.end(); ++it) {
-		if (*it != NULL && *it != sender)
-			(*it)->sendMessage(msg);
+		if (*it != NULL && *it != sender && _server != NULL)
+			_server->queueMessage((*it)->getFd(), msg);
 	}
 }
 

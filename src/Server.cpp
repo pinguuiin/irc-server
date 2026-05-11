@@ -234,7 +234,7 @@ Channel* Server::createChannel(const std::string& name, Client* creator)
 	Channel* channel = getChannel(name);
 	if (channel != NULL)
 		return channel;
-	channel = new Channel(name, creator);
+	channel = new Channel(name, creator, this);
 	_channels.insert(std::make_pair(name, channel));
 	return channel;
 }

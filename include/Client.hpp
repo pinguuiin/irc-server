@@ -15,6 +15,8 @@ class Client {
 		const std::string& getIp() const;
 		const std::string& getNickname() const;
 		const std::string& getUsername() const;
+		Server* getServer() const;
+
 		void setFd(int fd);
 		void setIp(std::string ip);
 		void setNickname(std::string nick);
@@ -39,8 +41,9 @@ class Client {
 		std::string _sendBuffer; // outgoing bytes waiting to be flushed
 };
 // =====================================================================
-// We're adding _sendBuffer to the private section so sendMessage()
-// can store data that couldn't be sent yet (non-blocking socket).
+// We're adding _sendBuffer to the private section so the program
+// can store data that couldn't be sent yet (non-blocking socket)
+// for each client.
 // The public interface (method signatures) is unchanged.
 // =====================================================================
 

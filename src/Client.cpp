@@ -41,6 +41,11 @@ const std::string& Client::getUsername() const
 	return _username;
 }
 
+Server* Client::getServer() const
+{
+    return _server;
+}
+
 // Setters
 void Client::setFd(int fd)
 {
@@ -73,7 +78,7 @@ void Client::authenticate()
 	_authenticated = true;
 }
 
-// ── sendMessage() ────────────────────────────────────────────────────
+// ── Send Message ────────────────────────────────────────────────────
 // Queues 'msg' for sending and immediately tries to flush the queue.
 //
 // WHY a buffer at all?
@@ -123,7 +128,7 @@ void Client::sendPendingMessage()
         _sendBuffer.erase(0, static_cast<size_t>(sent));
 	}
 }
-// ── receiveData() ────────────────────────────────────────────────────
+// ── Receive and Handle Message ─────────────────────────────────────
 // Server::receiveMessage() reads raw bytes from the socket and passes
 // them here as a std::string chunk.  We just append to _recvBuffer;
 // the actual line-framing happens in getNextMessage().

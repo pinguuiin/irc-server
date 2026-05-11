@@ -5,11 +5,12 @@
 #include <vector>
 
 class Client;
+class Server;
 
 class Channel {
 
 	public:
-		Channel(const std::string& name, Client* creator);
+		Channel(const std::string& name, Client* creator, Server* server);
 		~Channel();
 
 		const std::string& getName() const;
@@ -46,6 +47,7 @@ class Channel {
 		std::vector<Client*> _clients;
 		std::vector<Client*> _operators;
 		std::vector<Client*> _invited;
+		Server* _server;
 };
 
 #endif
