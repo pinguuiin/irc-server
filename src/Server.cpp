@@ -22,7 +22,7 @@ Server::~Server()
 	if (_newCliFd != -1)
 		close(_newCliFd);
 
-	for (auto cli : _clients) {
+	for (auto &cli : _clients) {
 		if (cli.first != -1)
 			close(cli.first);
 	}
@@ -128,8 +128,7 @@ void Server::acceptNewClient(struct epoll_event &ev)
 	// Create new client instance and add it to server
 	if (inet_ntop(AF_INET, &(addr.sin_addr), ipBuf, INET_ADDRSTRLEN) == NULL)
 		throw std::runtime_error(std::string("inet_ntop error: ") + std::strerror(errno));
-	Client client(cliFd, ipBuf, this);
-	_clients.insert({cliFd, &client});
+	_clients.emplace(std::make_pair(cliFd, Client(cliFd, ipBuf, this)));
 	_newCliFd = -1;
 }
 
@@ -143,17 +142,17 @@ void Server::removeClient(int fd)
 
 Client* Server::getClient(int fd)
 {
-	std::map<int, Client*>::iterator it = _clients.find(fd);
+	std::map<int, Client>::iterator it = _clients.find(fd);
 	if (it == _clients.end())
 		return NULL;
-	return it->second;
+	return &it->second;
 }
 
 Client* Server::getClientByNickname(const std::string& nickname)
 {
-	for (std::map<int, Client*>::iterator it = _clients.begin(); it != _clients.end(); ++it) {
-		if (it->second != NULL && it->second->getNickname() == nickname)
-			return it->second;
+	for (std::map<int, Client>::iterator it = _clients.begin(); it != _clients.end(); ++it) {
+		if (it->second.getNickname() == nickname)
+			return &it->second;
 	}
 	return NULL;
 }
@@ -195,7 +194,7 @@ void Server::queueMessage(int fd, const std::string& msg)
 
 void Server::sendMessage(int fd)
 {
-	_clients.at(fd)->sendPendingMessage();
+	_clients.at(fd).sendPendingMessage();
 	disableWriteEvent(fd);
 }
 

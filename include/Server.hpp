@@ -48,7 +48,7 @@ class Server {
 		int _epollFd{-1};
 		int _newCliFd{-1};
 		bool _running;
-		std::map<int, Client*> _clients;
+		std::map<int, Client> _clients;
 		std::map<std::string, Channel*> _channels;
 };
 
