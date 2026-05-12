@@ -73,12 +73,6 @@ bool Client::isAuthenticated() const
 	return _authenticated;
 }
 
-// Called by CommandHandler once PASS + NICK + USER have all been received and validated.
-void Client::authenticate()
-{
-	_authenticated = true;
-}
-
 bool Client::isPassOk() const
 {
 	return _passOk;
@@ -108,6 +102,13 @@ void Client::setUserSet()
 {
 	_userSet = true;
 }
+
+// Called by CommandHandler once PASS + NICK + USER have all been received and validated.
+void Client::authenticate()
+{
+	_authenticated = true;
+}
+
 
 // ── Send Message ────────────────────────────────────────────────────
 // Queues 'msg' for sending and immediately tries to flush the queue.
