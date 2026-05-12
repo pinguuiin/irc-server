@@ -22,6 +22,14 @@ class Client {
 		void setNickname(std::string nick);
 		void setUsername(std::string user);
 
+		// Registration step trackers
+		bool isPassOk() const;
+		bool isNickSet() const;
+		bool isUserSet() const;
+		void setPassOk();
+		void setNickSet();
+		void setUserSet();
+
 		bool isAuthenticated() const;
 		void authenticate();
 
@@ -36,15 +44,14 @@ class Client {
 		Server* _server;
 		std::string _nickname;
 		std::string _username;
+		// Three separate flags - one per registration step.
+		// _authenicate only becomes true once ALL three are done.
+		bool _passOk;
+		bool _nickSet;
+		bool _userSet;
 		bool _authenticated;
 		std::string _recvBuffer;	// incoming raw bytes waiting to be framed
 		std::string _sendBuffer; // outgoing bytes waiting to be flushed
 };
-// =====================================================================
-// We're adding _sendBuffer to the private section so the program
-// can store data that couldn't be sent yet (non-blocking socket)
-// for each client.
-// The public interface (method signatures) is unchanged.
-// =====================================================================
 
 #endif
