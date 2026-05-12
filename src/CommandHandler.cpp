@@ -72,18 +72,27 @@ void CommandHandler::handleCommand(Client* client, const CommandParser::ParsedCo
 		_server->queueMessage(client->getFd(), errUnknownCommand(client->getNickname(), command));
 }
 
+// ── handlePass ──────────────────────────────────────────────────────
+// Validates the servver password and marks _passOk on the client.
+// Then tries to complete registration n case NICK+USER already arrived.
 void CommandHandler::handlePass(Client* client, const std::vector<std::string>& params)
 {
 	if (params.empty()) {
 		_server->queueMessage(client->getFd(), errNeedMoreParams(client->getNickname(), "PASS"));
 		return;
 	}
-	if (params[0] == _server->getPassword())
-		client->authenticate();
-	else
+	if (params[0] != _server->getPassword())
+	{
 		_server->queueMessage(client->getFd(), ":ircserv 464 " + client->getNickname() + " :Password incorrect\r\n");
+		return;
+	}
+	client->setPassOk();
+	tryCompleteRegistration(client);
 }
 
+// ── handleNick ──────────────────────────────────────────────────────
+// Sets nickname after checking validity and uniqueness (433 ERR_NICKNAMEINUSE).
+// Marks _nickSet and tries to complete registration.
 void CommandHandler::handleNick(Client* client, const std::vector<std::string>& params)
 {
 	if (params.empty()) {
@@ -94,9 +103,20 @@ void CommandHandler::handleNick(Client* client, const std::vector<std::string>& 
 		_server->queueMessage(client->getFd(), ":ircserv 432 * " + params[0] + " :Erroneous nickname\r\n");
 		return;
 	}
+	// 433 ERR_NICKNAMEINUSE - reject if another client already holds this nick
+	Client* existing = _server->getClientByNickname(params[0]);
+	if (existing != NULL && existing != client)
+	{
+		_server->queueMessage(client->getFd(), ":ircserv 433 * " + params[0] + " :Nickname is already in use\r\n");
+		return;
+	}
 	client->setNickname(params[0]);
+	client->setNickSet();
+	tryCompleteRegistration(client);
 }
 
+// ── handleUser ──────────────────────────────────────────────────────
+// Sets the username (ident). Marks _userSet and tries to complete registration.
 void CommandHandler::handleUser(Client* client, const std::vector<std::string>& params)
 {
 	if (params.empty()) {
@@ -104,6 +124,29 @@ void CommandHandler::handleUser(Client* client, const std::vector<std::string>& 
 		return;
 	}
 	client->setUsername(params[0]);
+	client->setUserSet();
+	tryCompleteRegistration(client);
+}
+
+// ── tryCompleteRegistration ─────────────────────────────────────────
+// Called after every PASS/NICK/USER handler.
+// Sends 001-004 numerics once all three steps are done.
+// irssi waits for 001 RPL_WELCOME before considering itself connected.
+void CommandHandler::tryCompleteRegistration(Client* client)
+{
+	if (!client->isPassOk() || !client->isNickSet() || !client->isUserSet())
+		return;
+	if (client->isAuthenticated()) // guard: don't send 001 twice
+		return;
+	client->authenticate();
+	_server->queueMessage(client->getFd(), ":ircserv 001 " + client->getNickname() + " :Welcome to the IRC Network "
+		+ client->getNickname() + "!" + client->getUsername() + "@localhost\r\n");
+
+	_server->queueMessage(client->getFd(), ":ircserv 002 " + client->getNickname() + " :Your host is ircserv, running version 1.0\r\n");
+
+	_server->queueMessage(client->getFd(), ":ircserv 003 " + client->getNickname() + " :This server was created just now\r\n");
+
+	_server->queueMessage(client->getFd(), ":ircserv 004 " + client->getNickname() + " ircserv 1.0 o itkol\r\n");
 }
 
 void CommandHandler::handleJoin(Client* client, const std::vector<std::string>& params)
