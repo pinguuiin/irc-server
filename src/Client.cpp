@@ -10,7 +10,8 @@
 #include <cstring>		// for strerror()
 
 Client::Client(int fd, std::string ip, Server* server)
-	: _fd(fd), _ip(ip), _server(server), _authenticated(false)
+	: _fd(fd), _ip(ip), _server(server), _passOk(false), _nickSet(false),
+	_userSet(false), _authenticated(false)
 {
 	(void)_server;
 }
@@ -76,6 +77,36 @@ bool Client::isAuthenticated() const
 void Client::authenticate()
 {
 	_authenticated = true;
+}
+
+bool Client::isPassOk() const
+{
+	return _passOk;
+}
+
+bool Client::isNickSet() const
+{
+	return _nickSet;
+}
+
+bool Client::isUserSet() const
+{
+	return _userSet;
+}
+
+void Client::setPassOk()
+{
+	_passOk = true;
+}
+
+void Client::setNickSet()
+{
+	_nickSet = true;
+}
+
+void Client::setUserSet()
+{
+	_userSet = true;
 }
 
 // ── Send Message ────────────────────────────────────────────────────
