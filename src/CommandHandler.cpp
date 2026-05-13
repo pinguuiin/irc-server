@@ -68,8 +68,39 @@ void CommandHandler::handleCommand(Client* client, const CommandParser::ParsedCo
 		handleTopic(client, params);
 	else if (command == "MODE")
 		handleMode(client, params);
+	else if (command == "CAP")
+		handleCap(client, params);
 	else
 		_server->queueMessage(client->getFd(), errUnknownCommand(client->getNickname(), command));
+}
+// ── handleCap ───────────────────────────────────────────────────────
+// irssi sends "CAP LS" before NICK/USER to negotiate extra features.
+// We don't support any capabilities, so we reply with an empty list
+// and then send "CAP END" to tell the client to stop waiting and
+// proceed with normal registration (NICK / USER / PASS).
+void CommandHandler::handleCap(Client* client, const std::vector<std::string>& params)
+{
+	if (params.empty())
+		return;
+
+	std::string subcommand = Utils::toUpper(params[0]);
+	if(subcommand == "LS")
+	{
+		// Empty capability list - we support nothing extra
+		_server->queueMessage(client->getFd(), ":ircserv CAP * LS :\r\n");
+	}
+	else if (subcommand == "REQ")
+	{
+		// Reject any capability the client requests
+		_server->queueMessage(client->getFd(), ":ircserv CAP * NAK :" + (params.size() > 1 ? params[1] : "")
+			+ "\r\n");
+	}
+	else if (subcommand == "END")
+	{
+		// Client is done with capability negotiaton, do nothing
+		// tryCompleteRegistration will fire once PASS+NICK+USER arrive
+	}
+
 }
 
 // ── handlePass ──────────────────────────────────────────────────────
