@@ -165,9 +165,9 @@ void CommandHandler::handleUser(Client* client, const std::vector<std::string>& 
 // irssi waits for 001 RPL_WELCOME before considering itself connected.
 void CommandHandler::tryCompleteRegistration(Client* client)
 {
-	if (!client->isPassOk() || !client->isNickSet() || !client->isUserSet())
+	if (client->isAuthenticated()) // fast exit for already-registered clients
 		return;
-	if (client->isAuthenticated()) // guard: don't send 001 twice
+	if (!client->isPassOk() || !client->isNickSet() || !client->isUserSet())
 		return;
 	client->authenticate();
 	_server->queueMessage(client->getFd(), ":ircserv 001 " + client->getNickname() + " :Welcome to the IRC Network "
