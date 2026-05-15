@@ -70,6 +70,10 @@ void CommandHandler::handleCommand(Client* client, const CommandParser::ParsedCo
 		handleMode(client, params);
 	else if (command == "CAP")
 		handleCap(client, params);
+	else if (command == "PART")
+		handlePart(client, params);
+	else if (command == "PING")
+		handlePing(client, params);
 	else
 		_server->queueMessage(client->getFd(), errUnknownCommand(client->getNickname(), command));
 }
@@ -273,8 +277,8 @@ void CommandHandler::handleKick(Client* client, const std::vector<std::string>& 
 	}
 	std::string reason = params.size() > 2 ? params[2] : client->getNickname();
 	std::string kickMsg = ":" + clientMask(client) + " KICK " + params[0] + " " + params[1] + " :" + reason + "\r\n";
-	channel->broadcastMessage(kickMsg, NULL);
-	_server->queueMessage(target->getFd(), kickMsg);
+	channel->broadcastMessage(kickMsg, target); // exclude target from broadcast
+	_server->queueMessage(target->getFd(), kickMsg); // send once to target
 	channel->removeClient(target);
 }
 
@@ -338,7 +342,7 @@ void CommandHandler::handleTopic(Client* client, const std::vector<std::string>&
 		return;
 	}
 	channel->setTopic(params[1]);
-	channel->broadcastMessage(":" + clientMask(client) + " TOPIC " + params[0] + " :" + params[1] + "\r\n", NULL);
+	channel->broadcastMessage(":" + clientMask(client) + " TOPIC " + params[0] + " :" + params[1] + "\r\n", client); // <-- pass client, not NULL, to exclude them from broadcast
 	_server->queueMessage(client->getFd(), ":" + clientMask(client) + " TOPIC " + params[0] + " :" + params[1] + "\r\n");
 }
 
@@ -418,6 +422,48 @@ void CommandHandler::handleMode(Client* client, const std::vector<std::string>& 
 	if ((flag == 'k' || flag == 'o' || (flag == 'l' && set)) && params.size() > 2)
 		modeMsg += " " + params[2];
 	modeMsg += "\r\n";
-	channel->broadcastMessage(modeMsg, NULL);
+	channel->broadcastMessage(modeMsg, client); // <-- pass client, not NULL, to exclude them from broadcast
 	_server->queueMessage(client->getFd(), modeMsg);
+}
+
+// ── handlePart ──────────────────────────────────────────────────────
+// Removes the client from a channel.
+// Broadcasts PART to all members (including the departing client)
+// before removing them from the member list.
+void CommandHandler::handlePart(Client* client, const std::vector<std::string>& params)
+{
+	if(params.empty())
+	{
+		_server->queueMessage(client->getFd(), errNeedMoreParams(client->getNickname(), "PART"));
+		return;
+	}
+	Channel* channel = _server->getChannel(params[0]);
+	if (channel == NULL)
+	{
+		_server->queueMessage(client->getFd(), errNoSuchChannel(client->getNickname(), params[0]));
+		return;
+	}
+	if (!channel->hasClient(client))
+	{
+		_server->queueMessage(client->getFd(), errNotOnChannel(client->getNickname(), params[0]));
+		return;
+	}
+	// Optional reason is the trailing parameter (params[1] if present)
+	std::string reason = params.size() > 1 ? params[1] : client->getNickname();
+	std::string partMsg = ":" + clientMask(client) + " PART " + params[0] + " :" + reason + "\r\n";
+
+	// Send to everyone INCLUDING the leaving client, then remove them
+	channel->broadcastMessage(partMsg, client);
+	_server->queueMessage(client->getFd(), partMsg);
+	channel->removeClient(client);
+}
+
+// ── handlePing ──────────────────────────────────────────────────────
+// Responds to PING with PONG.
+// IRC clients send PING regularly; no reply = disconnect after timeout.
+// Format:  PING <token>  →  :ircserv PONG ircserv :<token>
+void CommandHandler::handlePing(Client* client, const std::vector<std::string>& params)
+{
+	std::string token = params.empty() ? "ircserv" : params[0];
+	_server->queueMessage(client->getFd(), ":ircserv PONG ircserv :" + token + "\r\n");
 }
