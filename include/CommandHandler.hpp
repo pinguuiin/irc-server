@@ -25,9 +25,9 @@ class CommandHandler {
 		void handleInvite(Client* client, const std::vector<std::string>& params);
 		void handleTopic(Client* client, const std::vector<std::string>& params);
 		void handleMode(Client* client, const std::vector<std::string>& params);
-		// CAP handler
 		void handleCap(Client* client, const std::vector<std::string>& params);
-		// Helper: fires 001 PL_WELCOME once PASS+NICK+USER are all done.
+		void handlePart(Client* client, const std::vector<std::string>& params);
+		void handlePing(Client* client, const std::vector<std::string>& params);
 		void tryCompleteRegistration(Client* client);
 };
 
