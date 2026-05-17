@@ -452,7 +452,7 @@ void CommandHandler::handlePart(Client* client, const std::vector<std::string>& 
 	std::string reason = params.size() > 1 ? params[1] : client->getNickname();
 	std::string partMsg = ":" + clientMask(client) + " PART " + params[0] + " :" + reason + "\r\n";
 
-	// Send to everyone INCLUDING the leaving client, then remove them
+	// Broadcast to everyone EXCEPT the leaving client, then send directly to them
 	channel->broadcastMessage(partMsg, client);
 	_server->queueMessage(client->getFd(), partMsg);
 	channel->removeClient(client);
