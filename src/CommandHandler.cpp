@@ -74,6 +74,8 @@ void CommandHandler::handleCommand(Client* client, const CommandParser::ParsedCo
 		handlePart(client, params);
 	else if (command == "PING")
 		handlePing(client, params);
+	else if (command == "QUIT")
+		handleQuit(client, params);
 	else
 		_server->queueMessage(client->getFd(), errUnknownCommand(client->getNickname(), command));
 }
