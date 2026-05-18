@@ -238,6 +238,23 @@ Channel* Server::createChannel(const std::string& name, Client* creator)
 	return channel;
 }
 
+//for handleQuit(CommandHandler.cpp) needs to iterate over all channels.
+const std::map<std::string, Channel*>& Server::getChannels() const
+{
+	return _channels;
+}
+
+// removeChannel(Without this, channels pile up in memory forever even after
+// everyone leaves, which is a memory leak)
+void Server::removeChannel(const std::string& name)
+{
+	std::map<std::string, Channel*>::iterator it = _channels.find(name);
+	if (it == _channels.end())
+		return;
+	delete it->second;
+	_channels.erase(it);
+}
+
 const std::string& Server::getPassword() const
 {
 	return _password;
