@@ -467,3 +467,29 @@ void CommandHandler::handlePing(Client* client, const std::vector<std::string>& 
 	std::string token = params.empty() ? "ircserv" : params[0];
 	_server->queueMessage(client->getFd(), ":ircserv PONG ircserv :" + token + "\r\n");
 }
+
+// ── handleQuit ──────────────────────────────────────────────────────
+// Handles a graceful disconnect.
+// 1. Broadcasts QUIT to every channel the client is in.
+// 2. Removes the client from each channel's member list.
+// 3. Tells the server to close the fd and delete the client object.
+void CommandHandler::handleQuit(Client* client, const std::vector<std::string>& params)
+{
+	std::string reason = params.empty() ? "Client quit" : params[0];
+	std::string quitMsg = ":" + clientMask(client) + " QUIT :" + reason + "\r\n";
+
+	const std::map<std::string, Channel*>& channels = _server->getChannels();
+	std::vector<Channel*> toLeave;
+
+	for (std::map<std::string, Channel*>::const_iterator it = channels.begin(); it != channels.end(); ++it)
+	{
+		if (it->second->hasClient(client))
+			toLeave.push_back(it->second);
+	}
+	for (size_t i = 0; i < toLeave.size(); ++i)
+	{
+		toLeave[i]->broadcastMessage(quitMsg, client); // notify others, not the quitter
+		toLeave[i]->removeClient(client);
+	}
+	_server->removeClient(client->getFd());
+}
