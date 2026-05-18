@@ -28,6 +28,7 @@ class CommandHandler {
 		void handleCap(Client* client, const std::vector<std::string>& params);
 		void handlePart(Client* client, const std::vector<std::string>& params);
 		void handlePing(Client* client, const std::vector<std::string>& params);
+		void handleQuit(Client* client, const std::vector<std::string>& params);
 		void tryCompleteRegistration(Client* client);
 };
 
