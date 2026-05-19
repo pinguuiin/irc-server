@@ -85,17 +85,40 @@ void Server::handlePolling()
 	// Poll on monitored sockets
 	int n, nfds;
 
-	while (1) {
+	while (1)
+	{
 		nfds = epoll_wait(_epollFd, events, MAXCONN, 1000); // timeout=?
 		if (nfds == -1)
+		{
+			if (errno == EINTR) // interrupted by signal, just retry
+				continue;
 			throw std::runtime_error(std::string("epoll_wait error: ") + std::strerror(errno));
-		for (n = 0; n < nfds; ++n) {
-			if (events[n].data.fd == _serFd)
+		}
+		for (n = 0; n < nfds; ++n)
+		{
+			int eventFd = events[n].data.fd;
+
+			if (eventFd == _serFd)
 				acceptNewClient(ev);
-			else if (events[n].events == EPOLLIN)
-				receiveMessage(events[n].data.fd);
-			else if (events[n].events == EPOLLOUT)
-				sendMessage(events[n].data.fd);
+			// EPOLLHup = peer closed connection, EPOLLERR = socket error
+			// Both mean the fd is dead; treat it like a disconnect
+			else if (events[n].events & (EPOLLHUP | EPOLLERR))
+				// This alreadyu calls removeClient internally (via recv returning 0 or -1)
+				receiveMessage(eventFd);
+				// fd is now dead = skip any other event for it in this batch
+				// by marking it so the EPOLLIN/EPOLLOUT branches below dont fire
+			else if (events[n].events & EPOLLIN)
+			{
+				// Guard: this fd may have been removed by an earlier event in this batch
+				if (_clients.find(eventFd) != _clients.end())
+					receiveMessage(eventFd);
+			}
+			else if (events[n].events & EPOLLOUT)
+			{
+				// Guard:same reason
+				if (_clients.find(eventFd) != _clients.end())
+					sendMessage(eventFd);
+			}
 		}
 	}
 }
@@ -120,7 +143,7 @@ void Server::acceptNewClient(struct epoll_event &ev)
 	if (fcntl(cliFd, F_SETFL, O_NONBLOCK) == -1)
 		throw std::runtime_error(std::string("fcntl error: ") + std::strerror(errno));
 	// Client sockets monitor both read and write
-	ev.events = EPOLLIN | EPOLLOUT; // not sure whether to add EPOLLET
+	ev.events = EPOLLIN; // not sure whether to add EPOLLET
 	ev.data.fd = cliFd;
 	if (epoll_ctl(_epollFd, EPOLL_CTL_ADD, cliFd, &ev) == -1)
 		throw std::runtime_error(std::string("epoll_ctl_add error: ") + std::strerror(errno));
@@ -134,8 +157,13 @@ void Server::acceptNewClient(struct epoll_event &ev)
 
 void Server::removeClient(int fd)
 {
+	// Guard: if this fd is already gone, do nothing
+	if (_clients.find(fd) == _clients.end())
+		return;
+	// We use cerr instead of throw; on abrupt disconnects the fd may
+	// already be invalid, and killing the whole server over it is wrong.
 	if (epoll_ctl(_epollFd, EPOLL_CTL_DEL, fd, NULL) == -1)
-		throw std::runtime_error(std::string("epoll_ctl_del error: ") + std::strerror(errno));
+		std::cerr << "epoll_ctl_del warning fd=" << fd << ": " << std::strerror(errno) << "\n";
 	_clients.erase(fd);
 	close(fd);
 }
@@ -162,22 +190,56 @@ void Server::receiveMessage(int fd)
 	char buf[1024];
 	ssize_t n;
 
-	while (1) {
+	// Guard: this fd may have already been removed earlier in this epoll batch
+	if (_clients.find(fd) == _clients.end())
+		return;
+
+	while (1)
+	{
 		memset(buf, 0, sizeof(buf));
 		n = recv(fd, buf, sizeof(buf), 0);
-		if (n < 0) {
+		if (n < 0)
+		{
 			if (errno == EAGAIN || errno == EWOULDBLOCK)  // End of input
 				return ;
 			throw std::runtime_error(std::string("recv error: ") + std::strerror(errno));
 		}
-		if (n == 0)  // The client shutdown the connection
+		if (n == 0)  // Client closed connection without sending QUIT(close terminal or kill irssi process)
+		{
+			Client* client = getClient(fd);
+			if (client)
+			{
+				// Build the quit message to broadcast to channels
+				std::string nick = client->getNickname().empty() ? "*" : client->getNickname();
+				std::string user = client->getUsername().empty() ? "unknown" : client->getUsername();
+				std::string quitMsg = ":" + nick + "!" + user + "@localhost QUIT: Connection closed\r\n";
+
+				//Find every channel this client was in and notify + remove them
+				std::vector<Channel*> toLeave;
+				for (std::map<std::string, Channel*>::iterator it = _channels.begin(); it != _channels.end(); ++it)
+				{
+					if (it->second->hasClient(client))
+						toLeave.push_back(it->second);
+				}
+				for (size_t i = 0; i < toLeave.size(); ++i)
+				{
+					toLeave[i]->broadcastMessage(quitMsg, client);
+					toLeave[i]->removeClient(client);
+				}
+			}
 			removeClient(fd);
+			return; // <- CRITICAL: fd is dead, stop the loop immediately
+		}
 		else
 		{
 			Client* client = getClient(fd);
 			if (!client)
-				throw std::runtime_error(std::string("program error: client not in the list"));
+				return;
+				// throw std::runtime_error(std::string("program error: client not in the list"));
 			client->receiveAndHandleMessage(buf);
+			// Check again - handleQuit may have removed this client during processing
+			if (_clients.find(fd) == _clients.end())
+				return;
 		}
 	}
 }
@@ -194,7 +256,13 @@ void Server::queueMessage(int fd, const std::string& msg)
 
 void Server::sendMessage(int fd)
 {
+	// Guard: client may have been removed by a disconnect in this same epoll batch
+	if (_clients.find(fd) == _clients.end())
+		return;
 	_clients.at(fd).sendPendingMessage();
+	// check again - sendPendingMessage may have triggered a disconnect
+	if (_clients.find(fd) == _clients.end())
+		return;
 	disableWriteEvent(fd);
 }
 
@@ -206,7 +274,7 @@ void Server::enableWriteEvent(int fd)
 	ev.data.fd = fd;
 
 	if (epoll_ctl(_epollFd, EPOLL_CTL_MOD, fd, &ev) == -1)
-		throw std::runtime_error(std::string("epoll_ctl_mod error: ") + std::strerror(errno));
+		std::cerr << "enableWriteEvent warning fd=" << fd << ": " << std::strerror(errno) << "\n";
 }
 
 void Server::disableWriteEvent(int fd)
@@ -217,7 +285,7 @@ void Server::disableWriteEvent(int fd)
 	ev.data.fd = fd;
 
 	if (epoll_ctl(_epollFd, EPOLL_CTL_MOD, fd, &ev) == -1)
-		throw std::runtime_error(std::string("epoll_ctl_mod error: ") + std::strerror(errno));
+		std::cerr << "disableWriteEvent warning fd=" << fd << ": " << std::strerror(errno) << "\n";
 }
 
 Channel* Server::getChannel(const std::string& name)
