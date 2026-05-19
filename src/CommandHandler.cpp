@@ -324,6 +324,9 @@ void CommandHandler::handleKick(Client* client, const std::vector<std::string>& 
 	channel->broadcastMessage(kickMsg, target); // exclude target from broadcast
 	_server->queueMessage(target->getFd(), kickMsg); // send once to target
 	channel->removeClient(target);
+	// Remove the channel itself if it's now empty
+	if (channel->getClients().empty())
+		_server->removeChannel(channel->getName());
 }
 
 void CommandHandler::handleInvite(Client* client, const std::vector<std::string>& params)
@@ -500,6 +503,9 @@ void CommandHandler::handlePart(Client* client, const std::vector<std::string>& 
 	channel->broadcastMessage(partMsg, client);
 	_server->queueMessage(client->getFd(), partMsg);
 	channel->removeClient(client);
+	// Remove the channel itself if it's now empty
+	if (channel->getClients().empty())
+		_server->removeChannel(channel->getName());
 }
 
 // ── handlePing ──────────────────────────────────────────────────────
@@ -534,6 +540,9 @@ void CommandHandler::handleQuit(Client* client, const std::vector<std::string>& 
 	{
 		toLeave[i]->broadcastMessage(quitMsg, client); // notify others, not the quitter
 		toLeave[i]->removeClient(client);
+		// Remove the channel itself if it's now empty
+		if (toLeave[i]->getClients().empty())
+			_server->removeChannel(toLeave[i]->getName());
 	}
 	_server->removeClient(client->getFd());
 }
