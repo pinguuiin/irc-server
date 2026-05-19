@@ -156,7 +156,15 @@ void CommandHandler::handleNick(Client* client, const std::vector<std::string>& 
 // Sets the username (ident). Marks _userSet and tries to complete registration.
 void CommandHandler::handleUser(Client* client, const std::vector<std::string>& params)
 {
-	if (params.empty()) {
+	// 462 ERR_ALREADYREGISTRED - USER cannot be sent more than once per session.
+	// Once the client is authenticated (001 was sent), reject any new USER command(guard).
+	if (client->isAuthenticated())
+	{
+		_server->queueMessage(client->getFd(), ":ircserv 462 " + client->getNickname() + " :You may not reregister\r\n");
+		return;
+	}
+	if (params.empty())
+	{
 		_server->queueMessage(client->getFd(), errNeedMoreParams(client->getNickname(), "USER"));
 		return;
 	}
@@ -222,6 +230,40 @@ void CommandHandler::handleJoin(Client* client, const std::vector<std::string>& 
 	std::string joinMsg = ":" + clientMask(client) + " JOIN :" + channelName + "\r\n";
 	channel->broadcastMessage(joinMsg, client);
 	_server->queueMessage(client->getFd(), joinMsg);
+
+	// Build the names list: prefix '@' for operators, nothing for regular users
+	std::string namesList;
+	const std::vector<Client*>& members = channel->getClients();
+
+	for (size_t i = 0; i < members.size(); ++i)
+	{
+		// Add space separator between names (but not before the first one)
+		if (i != 0)
+			namesList += " ";
+
+		// '@' prefix if this member is a channel operator
+		if (channel->isOperator(members[i]))
+			namesList += "@";
+
+		namesList += members[i]->getNickname();
+	}
+	// TOPIC (332 or 331; always send one) - send the existing topic (if there is one) to the joining client
+	// irssi displays this in the channel header
+	if (!channel->getTopic().empty())
+	{
+		_server->queueMessage(client->getFd(), ":ircserv 332 " + client->getNickname() + " " + channelName + " :" + channel->getTopic() + "\r\n");
+	}
+	else
+		_server->queueMessage(client->getFd(), ":ircserv 331 " + client->getNickname() + " " + channelName + " :No topic is set\r\n");
+
+	// 353 RPL_NAMREPLY - "=" means public channel (vs "@" secret or "*" private)
+	// Format: :server 353 <yournick> = <#channel> : <names...>
+	_server->queueMessage(client->getFd(), ":ircserv 353 " + client->getNickname() +  " = " + channelName + " :" + namesList + "\r\n");
+
+	// 366 RPL_ENDOFNAME - tells irssi the names list is complete
+	// Format: :server 366 <yournick> <#channel> :End of /NAME list
+	_server->queueMessage(client->getFd(), ":ircserv 366 " + client->getNickname() + " " + channelName + " :End of /NAMES list\r\n");
+
 }
 
 void CommandHandler::handlePrivmsg(Client* client, const std::vector<std::string>& params)
