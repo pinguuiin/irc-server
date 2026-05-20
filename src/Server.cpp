@@ -25,6 +25,11 @@ Server::~Server()
 	for (auto &cli : _clients) {
 		if (cli.first != -1)
 			close(cli.first);
+	for (auto& ch : _channels)
+	{
+		delete ch.second;
+	}
+	_channels.clear();
 	}
 }
 
