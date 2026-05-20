@@ -3,13 +3,13 @@
 #include "Server.hpp"
 #include <algorithm>
 
+// The constructor just sets up the channel's initial state; nothing more.
 Channel::Channel(const std::string& name, Client* creator, Server* server)
 	: _name(name), _topic(""), _inviteOnly(false), _key(""), _topicRestricted(true), _userLimit(0), _server(server)
 {
-	if (creator != NULL) {
-		_clients.push_back(creator);
-		_operators.push_back(creator);
-	}
+	// Don't add creator here - handleJoin will call addClient()
+	// and then send 355/366 uniformly for everyone including the creator
+	(void)creator; //creator is no longer used here
 }
 
 Channel::~Channel()
