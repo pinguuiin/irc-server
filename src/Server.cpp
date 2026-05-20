@@ -212,7 +212,7 @@ void Server::receiveMessage(int fd)
 				// Build the quit message to broadcast to channels
 				std::string nick = client->getNickname().empty() ? "*" : client->getNickname();
 				std::string user = client->getUsername().empty() ? "unknown" : client->getUsername();
-				std::string quitMsg = ":" + nick + "!" + user + "@localhost QUIT: Connection closed\r\n";
+				std::string quitMsg = ":" + nick + "!" + user + "@localhost QUIT :Connection closed\r\n";
 
 				//Find every channel this client was in and notify + remove them
 				std::vector<Channel*> toLeave;
@@ -225,6 +225,9 @@ void Server::receiveMessage(int fd)
 				{
 					toLeave[i]->broadcastMessage(quitMsg, client);
 					toLeave[i]->removeClient(client);
+
+					if (toLeave[i]->getClients().empty())
+						removeChannel(toLeave[i]->getName());
 				}
 			}
 			removeClient(fd);
