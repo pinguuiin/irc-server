@@ -238,7 +238,6 @@ void Server::receiveMessage(int fd)
 			Client* client = getClient(fd);
 			if (!client)
 				return;
-				// throw std::runtime_error(std::string("program error: client not in the list"));
 			client->receiveAndHandleMessage(buf);
 			// Check again - handleQuit may have removed this client during processing
 			if (_clients.find(fd) == _clients.end())
