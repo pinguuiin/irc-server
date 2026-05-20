@@ -51,6 +51,20 @@ void CommandHandler::handleCommand(Client* client, const CommandParser::ParsedCo
 	std::vector<std::string> params = cmd.params;
 	if (!cmd.trailing.empty())
 		params.push_back(cmd.trailing);
+
+	// These are the ONLY commands allowed before the handshake is complete.
+	// Every other command requires the client to be fully registered.
+	bool isPreAuthCommand = (command == "PASS" || command == "NICK" || command == "USER"
+		|| command == "CAP" || command == "PING" || command == "QUIT");
+	// If the client is NOT yet authenticated and this is NOT a pre-auth command,
+	// reject it with 451 ERR_NOTREGISTERED and stop here.
+	if (!client->isAuthenticated() && !isPreAuthCommand)
+	{
+		// "451" IRC numeric for "You have not registered"
+		_server->queueMessage(client->getFd(), ":ircserv 451 * " + command + " :You have not registerd\r\n");
+		return;
+	}
+	// Normal dispatch from here on
 	if (command == "PASS")
 		handlePass(client, params);
 	else if (command == "NICK")
