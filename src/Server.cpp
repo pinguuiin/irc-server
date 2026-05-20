@@ -19,18 +19,17 @@ Server::~Server()
 		close(_serFd);
 	if (_epollFd != -1)
 		close(_epollFd);
-	if (_newCliFd != -1)
-		close(_newCliFd);
 
-	for (auto &cli : _clients) {
+	for (auto &cli : _clients)
+	{
 		if (cli.first != -1)
 			close(cli.first);
-	for (auto& ch : _channels)
+	}
+	for (auto &ch : _channels)
 	{
 		delete ch.second;
 	}
 	_channels.clear();
-	}
 }
 
 void Server::initServer()
@@ -144,20 +143,30 @@ void Server::acceptNewClient(struct epoll_event &ev)
 	cliFd = accept(_serFd, (struct sockaddr *)&addr, &len);
 	if (cliFd == -1)
 		throw std::runtime_error(std::string("accept error: ") + std::strerror(errno));
-	_newCliFd = cliFd;
+
+	// Fix: close cliFd before throwing so it doesn't leak(if fcntl fails after accept succeeds)
 	if (fcntl(cliFd, F_SETFL, O_NONBLOCK) == -1)
+	{
+		close(cliFd); // don't leak the accepted fd
 		throw std::runtime_error(std::string("fcntl error: ") + std::strerror(errno));
+	}
 	// Client sockets monitor both read and write
 	ev.events = EPOLLIN; // not sure whether to add EPOLLET
 	ev.data.fd = cliFd;
 	if (epoll_ctl(_epollFd, EPOLL_CTL_ADD, cliFd, &ev) == -1)
+	{
+		close(cliFd);
 		throw std::runtime_error(std::string("epoll_ctl_add error: ") + std::strerror(errno));
+	}
 
 	// Create new client instance and add it to server
 	if (inet_ntop(AF_INET, &(addr.sin_addr), ipBuf, INET_ADDRSTRLEN) == NULL)
+	{
+		epoll_ctl(_epollFd, EPOLL_CTL_DEL, cliFd, NULL); // remove from epoll first
+		close(cliFd); // then close the fd
 		throw std::runtime_error(std::string("inet_ntop error: ") + std::strerror(errno));
+	}
 	_clients.emplace(std::make_pair(cliFd, Client(cliFd, ipBuf, this)));
-	_newCliFd = -1;
 }
 
 void Server::removeClient(int fd)
