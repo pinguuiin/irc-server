@@ -673,5 +673,8 @@ void CommandHandler::handleQuit(Client* client, const std::vector<std::string>& 
 		if (toLeave[i]->getClients().empty())
 			_server->removeChannel(toLeave[i]->getName());
 	}
-	close(client->getFd());
+	// removeClient closes the fd AND removes it
+	// from epoll AND erases it from _clients, all in one call.
+	int fd = client->getFd();
+	_server->removeChannel(fd);
 }
