@@ -4,6 +4,7 @@
 #include "Server.hpp"
 #include "Utils.hpp"
 #include <cstdlib>
+#include <unistd.h> //for close
 
 namespace {
 	static std::string clientMask(Client* client)
@@ -658,5 +659,5 @@ void CommandHandler::handleQuit(Client* client, const std::vector<std::string>& 
 		if (toLeave[i]->getClients().empty())
 			_server->removeChannel(toLeave[i]->getName());
 	}
-	_server->removeClient(client->getFd());
+	close(client->getFd());
 }
