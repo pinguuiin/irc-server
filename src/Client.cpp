@@ -160,6 +160,7 @@ void Client::sendPendingMessage()
         _sendBuffer.erase(0, static_cast<size_t>(sent));
 	}
 }
+
 // ── Receive and Handle Message ─────────────────────────────────────
 // Server::receiveMessage() reads raw bytes from the socket and passes
 // them here as a std::string chunk.  We just append to _recvBuffer;
@@ -172,17 +173,22 @@ void Client::sendPendingMessage()
 // extracted one at a time by getNextMessage().
 void Client::receiveAndHandleMessage(const char *buf)
 {
-    std::string data(buf);
+    _recvBuffer += std::string(buf);
     std::string msg;
 
-	_recvBuffer += data;
-    while (!(msg = getNextMessage()).empty()) {
+    while (!(msg = getNextMessage()).empty())
+	{
         const CommandParser::ParsedCommand& cmd = CommandParser::parse(msg);
         // ignore invalid commands with empty command name
-        if (CommandParser::validateCommand(cmd) == false)
-            return ;
+        if (!CommandParser::validateCommand(cmd))
+            return;
         CommandHandler cmdhandler(_server);
         cmdhandler.handleCommand(this, cmd);
+
+		// CRITICAL: if handleCommand removed us (e.g. QUIT or bad password),
+		// 'this' is now a dangling pointer; stops immediately
+		if (_server->getClient(_fd) == nullptr)
+			return;
     }
 }
 
