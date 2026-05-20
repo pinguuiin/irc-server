@@ -245,6 +245,11 @@ void CommandHandler::handleJoin(Client* client, const std::vector<std::string>& 
 	}
 
 	channel->addClient(client);
+
+	// If this client is the only member, they just created the channel.
+	// Make them the channel operator automatically.
+	if (channel->getClients().size() == 1)
+		channel->addOperator(client);
 	std::string joinMsg = ":" + clientMask(client) + " JOIN :" + channelName + "\r\n";
 	channel->broadcastMessage(joinMsg, client);
 	_server->queueMessage(client->getFd(), joinMsg);
