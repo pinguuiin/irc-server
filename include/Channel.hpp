@@ -15,6 +15,7 @@ class Channel {
 
 		const std::string& getName() const;
 		const std::string& getTopic() const;
+		const std::string& getKey() const;
 		void setTopic(std::string topic);
 		bool isInviteOnly() const;
 		void setInviteOnly(bool inviteOnly);

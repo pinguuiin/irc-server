@@ -26,6 +26,11 @@ const std::string& Channel::getTopic() const
 	return _topic;
 }
 
+const std::string& Channel::getKey() const
+{
+	return _key;
+}
+
 void Channel::setTopic(std::string topic)
 {
 	_topic = topic;
