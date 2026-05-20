@@ -100,8 +100,6 @@ void Channel::removeClient(Client* client)
 	_clients.erase(std::remove(_clients.begin(), _clients.end(), client), _clients.end());
 	_operators.erase(std::remove(_operators.begin(), _operators.end(), client), _operators.end());
 	_invited.erase(std::remove(_invited.begin(), _invited.end(), client), _invited.end());
-	if (_clients.empty())
-		_server->removeChannel(_name);
 }
 
 bool Channel::hasClient(Client* client) const
