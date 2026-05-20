@@ -205,23 +205,27 @@ void Client::receiveAndHandleMessage(const char *buf)
 // ── The updated version only accepts line ending with "\r\n"──────────
 std::string Client::getNextMessage()
 {
-	// Find the first newline in the buffer
-    auto pos = _recvBuffer.find("\r\n");
+	// Accept both \r\n (IRC standard) and bare \n (nc without -C)
+	auto pos = _recvBuffer.find('\n');
 
-    // No '\r\n' found — we don't have a complete line yet
-    if (pos == std::string::npos)
-        return "";
+	// No '\r\n' found — we don't have a complete line yet
+	if (pos == std::string::npos)
+		return "";
 
-    // If line exceeds 512-bytes limit (including "\r\n"), truncate it
-    std::string msg = _recvBuffer.substr(0, std::min(pos, static_cast<size_t>(510)));
+	// Extract the line up to (but not including) the \n
+	std::string msg = _recvBuffer.substr(0,pos);
 
-    // Remove the consumed line (including the "\r\n") from the buffer
-    _recvBuffer.erase(0, pos + 2);
+	// Remove the consumed line including the '\n' from the buffer
+	_recvBuffer.erase(0, pos + 1);
 
-    // // Strip a trailing '\r' so callers never see it
-    // if (!line.empty() && line.back() == '\r')
-    //     line.pop_back();
+	// Strip trailing \r if present (handles proper \r\n CRLF)
+	if (!msg.empty() && msg.back() == '\r')
+		msg.pop_back();
 
-    return msg;
+	// Enforce 510-char limit (512 minus \r\n)
+	if (msg.size() > 510)
+		msg = msg.substr(0, 510);
+
+	return msg;
 }
 
