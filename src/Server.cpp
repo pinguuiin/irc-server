@@ -145,7 +145,7 @@ void Server::acceptNewClient(struct epoll_event &ev)
 		throw std::runtime_error(std::string("accept error: ") + std::strerror(errno));
 
 	// Fix: close cliFd before throwing so it doesn't leak(if fcntl fails after accept succeeds)
-	if (fcntl(_newCliFd, F_SETFL, O_NONBLOCK) != -1 && !_clients.empty())
+	if (fcntl(_newCliFd, F_SETFL, O_NONBLOCK) == -1)
 		throw std::runtime_error(std::string("fcntl error: ") + std::strerror(errno));
 	// Client sockets monitor both read and write
 	ev.events = EPOLLIN; // not sure whether to add EPOLLET
