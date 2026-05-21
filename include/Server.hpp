@@ -53,6 +53,7 @@ class Server {
 		const std::string _password;
 		int _serFd{-1}; // listening socket fd
 		int _epollFd{-1};
+		int _newCliFd{-1};
 		bool _running;
 		std::map<int, Client> _clients;
 		std::map<std::string, Channel*> _channels;

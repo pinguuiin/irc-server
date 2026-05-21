@@ -19,6 +19,8 @@ Server::~Server()
 		close(_serFd);
 	if (_epollFd != -1)
 		close(_epollFd);
+	if (_newCliFd != -1)
+		close(_newCliFd);
 
 	for (auto &cli : _clients)
 	{
@@ -131,42 +133,34 @@ void Server::handlePolling()
 interesting list of epoll, and add new client to client map */
 void Server::acceptNewClient(struct epoll_event &ev)
 {
-	int cliFd;
 	struct sockaddr_in addr;
 	socklen_t len;
 	char ipBuf[INET_ADDRSTRLEN];
 
-	cliFd = -1;
 	len = sizeof(addr);
 
 	// Accept new connection request and add it to monitoring list
-	cliFd = accept(_serFd, (struct sockaddr *)&addr, &len);
-	if (cliFd == -1)
+	_newCliFd = accept(_serFd, (struct sockaddr *)&addr, &len);
+	if (_newCliFd == -1)
 		throw std::runtime_error(std::string("accept error: ") + std::strerror(errno));
 
 	// Fix: close cliFd before throwing so it doesn't leak(if fcntl fails after accept succeeds)
-	if (fcntl(cliFd, F_SETFL, O_NONBLOCK) == -1)
-	{
-		close(cliFd); // don't leak the accepted fd
+	if (fcntl(_newCliFd, F_SETFL, O_NONBLOCK) != -1 && !_clients.empty())
 		throw std::runtime_error(std::string("fcntl error: ") + std::strerror(errno));
-	}
 	// Client sockets monitor both read and write
 	ev.events = EPOLLIN; // not sure whether to add EPOLLET
-	ev.data.fd = cliFd;
-	if (epoll_ctl(_epollFd, EPOLL_CTL_ADD, cliFd, &ev) == -1)
-	{
-		close(cliFd);
+	ev.data.fd = _newCliFd;
+	if (epoll_ctl(_epollFd, EPOLL_CTL_ADD, _newCliFd, &ev) == -1)
 		throw std::runtime_error(std::string("epoll_ctl_add error: ") + std::strerror(errno));
-	}
 
 	// Create new client instance and add it to server
 	if (inet_ntop(AF_INET, &(addr.sin_addr), ipBuf, INET_ADDRSTRLEN) == NULL)
 	{
-		epoll_ctl(_epollFd, EPOLL_CTL_DEL, cliFd, NULL); // remove from epoll first
-		close(cliFd); // then close the fd
+		epoll_ctl(_epollFd, EPOLL_CTL_DEL, _newCliFd, NULL); // remove from epoll first
 		throw std::runtime_error(std::string("inet_ntop error: ") + std::strerror(errno));
 	}
-	_clients.emplace(std::make_pair(cliFd, Client(cliFd, ipBuf, this)));
+	_clients.emplace(std::make_pair(_newCliFd, Client(_newCliFd, ipBuf, this)));
+	_newCliFd = -1;
 }
 
 void Server::removeClient(int fd)
