@@ -31,7 +31,6 @@ Server::~Server()
 	{
 		delete ch.second;
 	}
-	_channels.clear();
 }
 
 void Server::initServer()
@@ -311,7 +310,7 @@ Channel* Server::createChannel(const std::string& name, Client* creator)
 	Channel* channel = getChannel(name);
 	if (channel != NULL)
 		return channel;
-	channel = new Channel(name, creator, this);
+	channel = new Channel(name, this);
 	_channels.insert(std::make_pair(name, channel));
 	return channel;
 }
