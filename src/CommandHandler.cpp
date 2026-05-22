@@ -285,15 +285,12 @@ void CommandHandler::handleJoin(Client* client, const std::vector<std::string>& 
 
 		namesList += members[i]->getNickname();
 	}
-	// TOPIC (332 or 331; always send one) - send the existing topic (if there is one) to the joining client
-	// irssi displays this in the channel header
+	// TOPIC (332) - send the existing topic (if there is one) to the joining client
+	// irssi displays this in the channel header, [FYI]irssi silently ignores 331
 	if (!channel->getTopic().empty())
 	{
 		_server->queueMessage(client->getFd(), ":ircserv 332 " + client->getNickname() + " " + channelName + " :" + channel->getTopic() + "\r\n");
 	}
-	else
-		_server->queueMessage(client->getFd(), ":ircserv 331 " + client->getNickname() + " " + channelName + " :No topic is set\r\n");
-
 	// 353 RPL_NAMREPLY - "=" means public channel (vs "@" secret or "*" private)
 	// Format: :server 353 <yournick> = <#channel> : <names...>
 	_server->queueMessage(client->getFd(), ":ircserv 353 " + client->getNickname() +  " = " + channelName + " :" + namesList + "\r\n");
