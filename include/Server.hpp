@@ -35,7 +35,7 @@ class Server {
 		void disableWriteEvent(int fd);
 
 		Channel* getChannel(const std::string& name);
-		Channel* createChannel(const std::string& name, Client* creator);
+		Channel* createChannel(const std::string& name);
 
 		//for handleQuit(CommandHandler.cpp) needs to iterate over all channels.
 		const std::map<std::string, Channel*>& getChannels() const;

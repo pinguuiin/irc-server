@@ -305,7 +305,7 @@ Channel* Server::getChannel(const std::string& name)
 	return it->second;
 }
 
-Channel* Server::createChannel(const std::string& name, Client* creator)
+Channel* Server::createChannel(const std::string& name)
 {
 	Channel* channel = getChannel(name);
 	if (channel != NULL)

@@ -241,7 +241,7 @@ void CommandHandler::handleJoin(Client* client, const std::vector<std::string>& 
 
 	Channel* channel = _server->getChannel(channelName);
 	if (channel == NULL)
-		channel = _server->createChannel(channelName, client);
+		channel = _server->createChannel(channelName);
 	if (channel->hasClient(client))
 		return;
 
