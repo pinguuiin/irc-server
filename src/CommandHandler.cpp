@@ -441,6 +441,14 @@ void CommandHandler::handleMode(Client* client, const std::vector<std::string>& 
 		return;
 	}
 
+	// Membership check
+	// ERR_NOTONCHANNEL (442) - sender must be on the channel.
+	if (!channel->hasClient(client))
+	{
+		_server->queueMessage(client->getFd(), ":ircserv 442 " + client->getNickname() + " " + params[0] + " :You're not on that channel\r\n");
+		return;
+	}
+
 	// MODE #channel with no flags - send current modes back (321 RPL_CHANNELMODEIS)
 	if (params.size() == 1)
 	{
@@ -486,6 +494,9 @@ void CommandHandler::handleMode(Client* client, const std::vector<std::string>& 
 	std::string appliedModes;
 	appliedModes += modeStr[0]; // '+' or '-'
 	std::string appliedArgs;
+	// Track whether at least one real flag was applied.
+	// Direction-switch character(+/-) don't count as real changes.
+	bool anyApplied = false;
 
 	// Walk every character in the mode string after teh +/-
 	for (size_t i = 1; i < modeStr.size(); ++i)
@@ -494,20 +505,25 @@ void CommandHandler::handleMode(Client* client, const std::vector<std::string>& 
 
 		if (flag == '+' || flag == '-')
 		{
-			// Mode string can switch direction mid-way e.g. "+i-t"
+			// Direction switch mid-string e.g. "+i-t"
+			// We append to appliedModes only if something was already applied,
+			// so we don't end up with dangling "+- " in the broadcast.
 			set = (flag == '+');
-			appliedModes += flag;
+			if (anyApplied)
+				appliedModes += flag;
 			continue;
 		}
 		if (flag == 'i')
 		{
 			channel->setInviteOnly(set);
 			appliedModes += 'i';
+			anyApplied = true;
 		}
 		else if (flag == 't')
 		{
 			channel->setTopicRestricted(set);
 			appliedModes += 't';
+			anyApplied = true;
 		}
 		else if (flag == 'k')
 		{
@@ -531,6 +547,7 @@ void CommandHandler::handleMode(Client* client, const std::vector<std::string>& 
 					++argIndex; // consume the optional "*" argument
 			}
 			appliedModes += 'k';
+			anyApplied = true;
 		}
 		else if (flag == 'o')
 		{
@@ -553,6 +570,7 @@ void CommandHandler::handleMode(Client* client, const std::vector<std::string>& 
 				channel->removeOperator(target);
 			appliedArgs += " " + params[argIndex];
 			appliedModes += 'o';
+			anyApplied = true;
 			++argIndex;
 		}
 		else if (flag == 'l')
@@ -582,6 +600,7 @@ void CommandHandler::handleMode(Client* client, const std::vector<std::string>& 
 				channel->setUserLimit(0);
 			}
 			appliedModes += 'l';
+			anyApplied = true;
 		}
 		else
 		{
@@ -589,10 +608,9 @@ void CommandHandler::handleMode(Client* client, const std::vector<std::string>& 
 			_server->queueMessage(client->getFd(), ":ircserv 472 " + client->getNickname() + " " + std::string(1, flag) + " :is unknown mode char to me\r\n");
 		}
 	}
-
-	// Only broadcast if at least one flag was actually applied
-	// appliedModes is at minimum "+"/"-"; check it has more than just the sign
-	if (appliedModes.size() > 1)
+	// Only broadcast if at least one real flag was actually applied.
+	// 'anyApplied' prevents ghost broadcasts from sure sign strings like "+-".
+	if (anyApplied)
 	{
 		std::string modeMsg = ":" + clientMask(client) + " MODE " + params[0] + " " + appliedModes + appliedArgs + "\r\n";
 		channel->broadcastMessage(modeMsg, client); // <-- pass client, not NULL, to exclude them from broadcast
