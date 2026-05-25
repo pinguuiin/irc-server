@@ -10,11 +10,12 @@ class Server;
 class Channel {
 
 	public:
-		Channel(const std::string& name, Client* creator, Server* server);
+		Channel(const std::string& name, Server* server);
 		~Channel();
 
 		const std::string& getName() const;
 		const std::string& getTopic() const;
+		const std::string& getKey() const;
 		void setTopic(std::string topic);
 		bool isInviteOnly() const;
 		void setInviteOnly(bool inviteOnly);

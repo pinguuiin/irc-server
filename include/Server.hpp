@@ -21,8 +21,7 @@ class Server {
 		void createSocket();
 		void handlePolling();
 
-		// void addClient(int fd, const std::string& ip);
-		void acceptNewClient(struct epoll_event &ev);
+		void acceptNewClient();
 		void removeClient(int fd);
 		Client* getClient(int fd);
 		Client* getClientByNickname(const std::string& nickname);
@@ -35,7 +34,14 @@ class Server {
 		void disableWriteEvent(int fd);
 
 		Channel* getChannel(const std::string& name);
-		Channel* createChannel(const std::string& name, Client* creator);
+		Channel* createChannel(const std::string& name);
+
+		//for handleQuit(CommandHandler.cpp) needs to iterate over all channels.
+		const std::map<std::string, Channel*>& getChannels() const;
+
+		// removeChannel(Without this, channels pile up in memory forever even after
+		// everyone leaves, which is a memory leak)
+		void removeChannel(const std::string& name);
 
 		const std::string& getPassword() const;
 

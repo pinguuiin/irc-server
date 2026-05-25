@@ -4,6 +4,7 @@
 #include "Server.hpp"
 #include "Utils.hpp"
 #include <cstdlib>
+#include <unistd.h> //for close
 
 namespace {
 	static std::string clientMask(Client* client)
@@ -50,6 +51,20 @@ void CommandHandler::handleCommand(Client* client, const CommandParser::ParsedCo
 	std::vector<std::string> params = cmd.params;
 	if (!cmd.trailing.empty())
 		params.push_back(cmd.trailing);
+
+	// These are the ONLY commands allowed before the handshake is complete.
+	// Every other command requires the client to be fully registered.
+	bool isPreAuthCommand = (command == "PASS" || command == "NICK" || command == "USER"
+		|| command == "CAP" || command == "PING" || command == "QUIT");
+	// If the client is NOT yet authenticated and this is NOT a pre-auth command,
+	// reject it with 451 ERR_NOTREGISTERED and stop here.
+	if (!client->isAuthenticated() && !isPreAuthCommand)
+	{
+		// "451" IRC numeric for "You have not registered"
+		_server->queueMessage(client->getFd(), ":ircserv 451 * " + command + " :You have not registerd\r\n");
+		return;
+	}
+	// Normal dispatch from here on
 	if (command == "PASS")
 		handlePass(client, params);
 	else if (command == "NICK")
@@ -74,6 +89,8 @@ void CommandHandler::handleCommand(Client* client, const CommandParser::ParsedCo
 		handlePart(client, params);
 	else if (command == "PING")
 		handlePing(client, params);
+	else if (command == "QUIT")
+		handleQuit(client, params);
 	else
 		_server->queueMessage(client->getFd(), errUnknownCommand(client->getNickname(), command));
 }
@@ -145,6 +162,24 @@ void CommandHandler::handleNick(Client* client, const std::vector<std::string>& 
 		_server->queueMessage(client->getFd(), ":ircserv 433 * " + params[0] + " :Nickname is already in use\r\n");
 		return;
 	}
+	//If already registered, broadcast the nick change to all channels
+	if (client->isAuthenticated())
+	{
+		std::string oldMask= clientMask(client);
+		client->setNickname(params[0]);
+		std::string nickMsg = ":" + oldMask + " NICK :" + params[0] + "\r\n";
+
+		// Notify all channels this client is in
+		const std::map<std::string, Channel*>& channels = _server->getChannels();
+		for (auto it = channels.begin(); it != channels.end(); ++it)
+		{
+			if (it->second->hasClient(client))
+				it->second->broadcastMessage(nickMsg, client);
+		}
+		// Also confirm to the client themselves
+		_server->queueMessage(client->getFd(), nickMsg);
+		return;
+	}
 	client->setNickname(params[0]);
 	client->setNickSet();
 	tryCompleteRegistration(client);
@@ -154,7 +189,15 @@ void CommandHandler::handleNick(Client* client, const std::vector<std::string>& 
 // Sets the username (ident). Marks _userSet and tries to complete registration.
 void CommandHandler::handleUser(Client* client, const std::vector<std::string>& params)
 {
-	if (params.empty()) {
+	// 462 ERR_ALREADYREGISTRED - USER cannot be sent more than once per session.
+	// Once the client is authenticated (001 was sent), reject any new USER command(guard).
+	if (client->isAuthenticated())
+	{
+		_server->queueMessage(client->getFd(), ":ircserv 462 " + client->getNickname() + " :You may not reregister\r\n");
+		return;
+	}
+	if (params.empty())
+	{
 		_server->queueMessage(client->getFd(), errNeedMoreParams(client->getNickname(), "USER"));
 		return;
 	}
@@ -198,7 +241,7 @@ void CommandHandler::handleJoin(Client* client, const std::vector<std::string>& 
 
 	Channel* channel = _server->getChannel(channelName);
 	if (channel == NULL)
-		channel = _server->createChannel(channelName, client);
+		channel = _server->createChannel(channelName);
 	if (channel->hasClient(client))
 		return;
 
@@ -217,9 +260,45 @@ void CommandHandler::handleJoin(Client* client, const std::vector<std::string>& 
 	}
 
 	channel->addClient(client);
+
+	// If this client is the only member, they just created the channel.
+	// Make them the channel operator automatically.
+	if (channel->getClients().size() == 1)
+		channel->addOperator(client);
 	std::string joinMsg = ":" + clientMask(client) + " JOIN :" + channelName + "\r\n";
 	channel->broadcastMessage(joinMsg, client);
 	_server->queueMessage(client->getFd(), joinMsg);
+
+	// Build the names list: prefix '@' for operators, nothing for regular users
+	std::string namesList;
+	const std::vector<Client*>& members = channel->getClients();
+
+	for (size_t i = 0; i < members.size(); ++i)
+	{
+		// Add space separator between names (but not before the first one)
+		if (i != 0)
+			namesList += " ";
+
+		// '@' prefix if this member is a channel operator
+		if (channel->isOperator(members[i]))
+			namesList += "@";
+
+		namesList += members[i]->getNickname();
+	}
+	// TOPIC (332) - send the existing topic (if there is one) to the joining client
+	// irssi displays this in the channel header, [FYI]irssi silently ignores 331
+	if (!channel->getTopic().empty())
+	{
+		_server->queueMessage(client->getFd(), ":ircserv 332 " + client->getNickname() + " " + channelName + " :" + channel->getTopic() + "\r\n");
+	}
+	// 353 RPL_NAMREPLY - "=" means public channel (vs "@" secret or "*" private)
+	// Format: :server 353 <yournick> = <#channel> : <names...>
+	_server->queueMessage(client->getFd(), ":ircserv 353 " + client->getNickname() +  " = " + channelName + " :" + namesList + "\r\n");
+
+	// 366 RPL_ENDOFNAME - tells irssi the names list is complete
+	// Format: :server 366 <yournick> <#channel> :End of /NAME list
+	_server->queueMessage(client->getFd(), ":ircserv 366 " + client->getNickname() + " " + channelName + " :End of /NAMES list\r\n");
+
 }
 
 void CommandHandler::handlePrivmsg(Client* client, const std::vector<std::string>& params)
@@ -280,6 +359,9 @@ void CommandHandler::handleKick(Client* client, const std::vector<std::string>& 
 	channel->broadcastMessage(kickMsg, target); // exclude target from broadcast
 	_server->queueMessage(target->getFd(), kickMsg); // send once to target
 	channel->removeClient(target);
+	// Remove the channel itself if it's now empty
+	if (channel->getClients().empty())
+		_server->removeChannel(channel->getName());
 }
 
 void CommandHandler::handleInvite(Client* client, const std::vector<std::string>& params)
@@ -348,7 +430,8 @@ void CommandHandler::handleTopic(Client* client, const std::vector<std::string>&
 
 void CommandHandler::handleMode(Client* client, const std::vector<std::string>& params)
 {
-	if (params.size() < 2) {
+	if (params.empty())
+	{
 		_server->queueMessage(client->getFd(), errNeedMoreParams(client->getNickname(), "MODE"));
 		return;
 	}
@@ -357,75 +440,183 @@ void CommandHandler::handleMode(Client* client, const std::vector<std::string>& 
 		_server->queueMessage(client->getFd(), errNoSuchChannel(client->getNickname(), params[0]));
 		return;
 	}
+
+	// Membership check
+	// ERR_NOTONCHANNEL (442) - sender must be on the channel.
+	if (!channel->hasClient(client))
+	{
+		_server->queueMessage(client->getFd(), ":ircserv 442 " + client->getNickname() + " " + params[0] + " :You're not on that channel\r\n");
+		return;
+	}
+
+	// MODE #channel with no flags - send current modes back (321 RPL_CHANNELMODEIS)
+	if (params.size() == 1)
+	{
+		std::string currentModes = "+";
+		std::string modeArgs;
+
+		if (channel->isInviteOnly())
+			currentModes += "i";
+		if (channel->isTopicRestricted())
+			currentModes += "t";
+		if (channel->hasKey())
+		{
+			currentModes += "k";
+			modeArgs += " " + channel->getKey();
+		}
+		if (channel->getUserLimit() > 0)
+		{
+			currentModes += "l";
+			modeArgs += " " + std::to_string(channel->getUserLimit());
+		}
+		_server->queueMessage(client->getFd(), ":ircserv 324 " + client->getNickname() + " " + params[0] + " " +
+			currentModes + modeArgs + "\r\n");
+		return;
+	}
+
+	// Only operators can change modes
 	if (!channel->isOperator(client)) {
 		_server->queueMessage(client->getFd(), errChanOpPrivsNeeded(client->getNickname(), params[0]));
 		return;
 	}
 
-	const std::string& mode = params[1];
-	if (mode.size() < 2 || (mode[0] != '+' && mode[0] != '-')) {
-		_server->queueMessage(client->getFd(), ":ircserv 472 " + client->getNickname() + " " + mode + " :is unknown mode char to me\r\n");
+	const std::string& modeStr = params[1];
+	if (modeStr.empty() || (modeStr[0] != '+' && modeStr[0] != '-'))
+	{
+		_server->queueMessage(client->getFd(), ":ircserv 472 " + client->getNickname() + " " + modeStr + " :is unknown mode char to me\r\n");
 		return;
 	}
 
-	bool set = mode[0] == '+';
-	char flag = mode[1];
-	if (flag == 'i')
-		channel->setInviteOnly(set);
-	else if (flag == 't')
-		channel->setTopicRestricted(set);
-	else if (flag == 'k') {
-		if (set) {
-			if (params.size() < 3) {
+	bool set = (modeStr[0] == '+');
+	size_t argIndex = 2; // next param to consume for flags that need an argument
+
+	// Track what we actually applied so we can broadcast a clean MODE message
+	std::string appliedModes;
+	appliedModes += modeStr[0]; // '+' or '-'
+	std::string appliedArgs;
+	// Track whether at least one real flag was applied.
+	// Direction-switch character(+/-) don't count as real changes.
+	bool anyApplied = false;
+
+	// Walk every character in the mode string after teh +/-
+	for (size_t i = 1; i < modeStr.size(); ++i)
+	{
+		char flag = modeStr[i];
+
+		if (flag == '+' || flag == '-')
+		{
+			// Direction switch mid-string e.g. "+i-t"
+			// We append to appliedModes only if something was already applied,
+			// so we don't end up with dangling "+- " in the broadcast.
+			set = (flag == '+');
+			if (anyApplied)
+				appliedModes += flag;
+			continue;
+		}
+		if (flag == 'i')
+		{
+			channel->setInviteOnly(set);
+			appliedModes += 'i';
+			anyApplied = true;
+		}
+		else if (flag == 't')
+		{
+			channel->setTopicRestricted(set);
+			appliedModes += 't';
+			anyApplied = true;
+		}
+		else if (flag == 'k')
+		{
+			if (set)
+			{
+				// +k requires a key argument
+				if (argIndex >= params.size())
+				{
+					_server->queueMessage(client->getFd(), errNeedMoreParams(client->getNickname(), "MODE"));
+					return;
+				}
+				channel->setKey(params[argIndex]);
+				appliedArgs += " " + params[argIndex];
+				++argIndex;
+			}
+			else
+			{
+				// -k removes the key; argument is optional (some clients send "*")
+				channel->setKey("");
+				if (argIndex < params.size())
+					++argIndex; // consume the optional "*" argument
+			}
+			appliedModes += 'k';
+			anyApplied = true;
+		}
+		else if (flag == 'o')
+		{
+			// +o/-o always requires a nick argument
+			if (argIndex >= params.size())
+			{
 				_server->queueMessage(client->getFd(), errNeedMoreParams(client->getNickname(), "MODE"));
 				return;
 			}
-			channel->setKey(params[2]);
-		} else {
-			channel->setKey("");
+			Client* target = _server->getClientByNickname(params[argIndex]);
+			if (target == NULL || !channel->hasClient(target))
+			{
+				_server->queueMessage(client->getFd(), ":ircserv 441 " + client->getNickname() + " " + params[argIndex] + " " + params[0] + " :They aren't on that channel\r\n");
+				++argIndex;
+				continue; // skip this flag, keep processing the rest
+			}
+			if (set)
+				channel->addOperator(target);
+			else
+				channel->removeOperator(target);
+			appliedArgs += " " + params[argIndex];
+			appliedModes += 'o';
+			anyApplied = true;
+			++argIndex;
 		}
-	} else if (flag == 'o') {
-		if (params.size() < 3) {
-			_server->queueMessage(client->getFd(), errNeedMoreParams(client->getNickname(), "MODE"));
-			return;
+		else if (flag == 'l')
+		{
+			if (set)
+			{
+				// +l requires a numeric limit argument
+				if (argIndex >= params.size())
+				{
+					_server->queueMessage(client->getFd(), errNeedMoreParams(client->getNickname(), "MODE"));
+					return;
+				}
+				int limit = std::atoi(params[argIndex].c_str());
+				if (limit <= 0)
+				{
+					_server->queueMessage(client->getFd(), ":ircserv 696 " + client->getNickname() + " " + params[0] + " l " + params[argIndex] + " :Invalid limit\r\n");
+					++argIndex;
+					continue;
+				}
+				channel->setUserLimit(limit);
+				appliedArgs += " " + params[argIndex];
+				++argIndex;
+			}
+			else
+			{
+				// -l takes no argument
+				channel->setUserLimit(0);
+			}
+			appliedModes += 'l';
+			anyApplied = true;
 		}
-		Client* target = _server->getClientByNickname(params[2]);
-		if (target == NULL || !channel->hasClient(target)) {
-			_server->queueMessage(client->getFd(), ":ircserv 441 " + client->getNickname() + " " + params[2] + " " + params[0] + " :They aren't on that channel\r\n");
-			return;
-		}
-		if (set)
-			channel->addOperator(target);
 		else
-			channel->removeOperator(target);
-	} else if (flag == 'l') {
-		if (set) {
-			if (params.size() < 3) {
-				_server->queueMessage(client->getFd(), errNeedMoreParams(client->getNickname(), "MODE"));
-				return;
-			}
-			int limit = std::atoi(params[2].c_str());
-			if (limit <= 0) {
-				_server->queueMessage(client->getFd(), ":ircserv 696 " + client->getNickname() + " " + params[0] + " l " + params[2] + " :Invalid limit\r\n");
-				return;
-			}
-			channel->setUserLimit(limit);
-		} else {
-			channel->setUserLimit(0);
+		{
+			// Unknown flag - reoprt it and skip
+			_server->queueMessage(client->getFd(), ":ircserv 472 " + client->getNickname() + " " + std::string(1, flag) + " :is unknown mode char to me\r\n");
 		}
-	} else {
-		_server->queueMessage(client->getFd(), ":ircserv 472 " + client->getNickname() + " " + std::string(1, flag) + " :is unknown mode char to me\r\n");
-		return;
 	}
-
-	std::string modeMsg = ":" + clientMask(client) + " MODE " + params[0] + " " + mode;
-	if ((flag == 'k' || flag == 'o' || (flag == 'l' && set)) && params.size() > 2)
-		modeMsg += " " + params[2];
-	modeMsg += "\r\n";
-	channel->broadcastMessage(modeMsg, client); // <-- pass client, not NULL, to exclude them from broadcast
-	_server->queueMessage(client->getFd(), modeMsg);
+	// Only broadcast if at least one real flag was actually applied.
+	// 'anyApplied' prevents ghost broadcasts from sure sign strings like "+-".
+	if (anyApplied)
+	{
+		std::string modeMsg = ":" + clientMask(client) + " MODE " + params[0] + " " + appliedModes + appliedArgs + "\r\n";
+		channel->broadcastMessage(modeMsg, client); // <-- pass client, not NULL, to exclude them from broadcast
+		_server->queueMessage(client->getFd(), modeMsg);
+	}
 }
-
 // ── handlePart ──────────────────────────────────────────────────────
 // Removes the client from a channel.
 // Broadcasts PART to all members (including the departing client)
@@ -456,6 +647,9 @@ void CommandHandler::handlePart(Client* client, const std::vector<std::string>& 
 	channel->broadcastMessage(partMsg, client);
 	_server->queueMessage(client->getFd(), partMsg);
 	channel->removeClient(client);
+	// Remove the channel itself if it's now empty
+	if (channel->getClients().empty())
+		_server->removeChannel(channel->getName());
 }
 
 // ── handlePing ──────────────────────────────────────────────────────
@@ -466,4 +660,36 @@ void CommandHandler::handlePing(Client* client, const std::vector<std::string>& 
 {
 	std::string token = params.empty() ? "ircserv" : params[0];
 	_server->queueMessage(client->getFd(), ":ircserv PONG ircserv :" + token + "\r\n");
+}
+
+// ── handleQuit ──────────────────────────────────────────────────────
+// Handles a graceful disconnect.
+// 1. Broadcasts QUIT to every channel the client is in.
+// 2. Removes the client from each channel's member list.
+// 3. Tells the server to close the fd and delete the client object.
+void CommandHandler::handleQuit(Client* client, const std::vector<std::string>& params)
+{
+	std::string reason = params.empty() ? "Client quit" : params[0];
+	std::string quitMsg = ":" + clientMask(client) + " QUIT :" + reason + "\r\n";
+
+	const std::map<std::string, Channel*>& channels = _server->getChannels();
+	std::vector<Channel*> toLeave;
+
+	for (std::map<std::string, Channel*>::const_iterator it = channels.begin(); it != channels.end(); ++it)
+	{
+		if (it->second->hasClient(client))
+			toLeave.push_back(it->second);
+	}
+	for (size_t i = 0; i < toLeave.size(); ++i)
+	{
+		toLeave[i]->broadcastMessage(quitMsg, client); // notify others, not the quitter
+		toLeave[i]->removeClient(client);
+		// Remove the channel itself if it's now empty
+		if (toLeave[i]->getClients().empty())
+			_server->removeChannel(toLeave[i]->getName());
+	}
+	// removeClient closes the fd AND removes it
+	// from epoll AND erases it from _clients, all in one call.
+	int fd = client->getFd();
+	_server->removeClient(fd);
 }

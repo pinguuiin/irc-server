@@ -3,13 +3,9 @@
 #include "Server.hpp"
 #include <algorithm>
 
-Channel::Channel(const std::string& name, Client* creator, Server* server)
+Channel::Channel(const std::string& name, Server* server)
 	: _name(name), _topic(""), _inviteOnly(false), _key(""), _topicRestricted(true), _userLimit(0), _server(server)
 {
-	if (creator != NULL) {
-		_clients.push_back(creator);
-		_operators.push_back(creator);
-	}
 }
 
 Channel::~Channel()
@@ -24,6 +20,11 @@ const std::string& Channel::getName() const
 const std::string& Channel::getTopic() const
 {
 	return _topic;
+}
+
+const std::string& Channel::getKey() const
+{
+	return _key;
 }
 
 void Channel::setTopic(std::string topic)
