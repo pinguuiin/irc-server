@@ -10,8 +10,10 @@
 #include <arpa/inet.h> // for inet_ntop()
 #include <iostream> // for io and error handling
 
+volatile sig_atomic_t Server::_running = 0;
+
 Server::Server(uint16_t port, std::string password)
-	: _port(port), _password(password), _running(false) {}
+	: _port(port), _password(password) {}
 
 Server::~Server()
 {
@@ -33,11 +35,18 @@ Server::~Server()
 	}
 }
 
+void Server::signalHandler(int signum)
+{
+	(void)signum;
+	std::cerr << "Interrupted by signal" << std::endl;
+	_running = 0;
+}
+
 void Server::initServer()
 {
+	_running = 1;
 	createSocket();
 	handlePolling();
-	_running = true;
 }
 
 /* Create and set up the listening socket for Server */
@@ -90,7 +99,7 @@ void Server::handlePolling()
 	// Poll on monitored sockets
 	int n, nfds;
 
-	while (1)
+	while (_running == 1)
 	{
 		nfds = epoll_wait(_epollFd, events, MAXCONN, 1000); // timeout=?
 		if (nfds == -1)
@@ -135,6 +144,7 @@ void Server::handlePolling()
 			}
 		}
 	}
+	stopServer();
 }
 
 /* Accept incoming connection request from the new client, register it to the
@@ -343,6 +353,5 @@ const std::string& Server::getPassword() const
 
 void Server::stopServer()
 {
-	std::cerr << "TODO: Server::stop" << std::endl;
-	_running = false;
+	throw std::runtime_error(std::string("Server is shutting down"));
 }
