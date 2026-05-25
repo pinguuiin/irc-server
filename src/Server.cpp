@@ -175,6 +175,9 @@ void Server::acceptNewClient()
 
 void Server::removeClient(int fd)
 {
+	// Guard: if this fd is already gone, do nothing
+	if (_clients.find(fd) == _clients.end())
+		return;
 	// We use cerr instead of throw; on abrupt disconnects the fd may
 	// already be invalid, and killing the whole server over it is wrong.
 	if (epoll_ctl(_epollFd, EPOLL_CTL_DEL, fd, NULL) == -1)
