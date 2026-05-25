@@ -175,9 +175,6 @@ void Server::acceptNewClient()
 
 void Server::removeClient(int fd)
 {
-	// Guard: if this fd is already gone, do nothing
-	if (_clients.find(fd) == _clients.end())
-		return;
 	// We use cerr instead of throw; on abrupt disconnects the fd may
 	// already be invalid, and killing the whole server over it is wrong.
 	if (epoll_ctl(_epollFd, EPOLL_CTL_DEL, fd, NULL) == -1)
@@ -207,10 +204,6 @@ void Server::receiveMessage(int fd)
 {
 	char buf[1024];
 	ssize_t n;
-
-	// Guard: this fd may have already been removed earlier in this epoll batch
-	if (_clients.find(fd) == _clients.end())
-		return;
 
 	while (1)
 	{
@@ -276,9 +269,6 @@ void Server::queueMessage(int fd, const std::string& msg)
 
 void Server::sendMessage(int fd)
 {
-	// Guard: client may have been removed by a disconnect in this same epoll batch
-	if (_clients.find(fd) == _clients.end())
-		return;
 	_clients.at(fd).sendPendingMessage();
 	// check again - sendPendingMessage may have triggered a disconnect
 	if (_clients.find(fd) == _clients.end())
