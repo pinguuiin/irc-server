@@ -38,7 +38,6 @@ Server::~Server()
 void Server::signalHandler(int signum)
 {
 	(void)signum;
-	std::cerr << "Interrupted by signal" << std::endl;
 	_running = 0;
 }
 
@@ -104,8 +103,8 @@ void Server::handlePolling()
 		nfds = epoll_wait(_epollFd, events, MAXCONN, 1000); // timeout=?
 		if (nfds == -1)
 		{
-			if (errno == EINTR) // signal interrupted epoll_wait, retry
-				continue;
+			if (_running == 0) // signal interrupted epoll_wait, silently stop the server
+				break;
 			throw std::runtime_error(std::string("epoll_wait error: ") + std::strerror(errno));
 		}
 		for (n = 0; n < nfds; ++n)
@@ -353,5 +352,5 @@ const std::string& Server::getPassword() const
 
 void Server::stopServer()
 {
-	throw std::runtime_error(std::string("Server is shutting down"));
+	std::cout << "Server is shutting down" << std::endl;
 }
