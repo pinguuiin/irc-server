@@ -21,8 +21,7 @@ class Server {
 		void createSocket();
 		void handlePolling();
 
-		// void addClient(int fd, const std::string& ip);
-		void acceptNewClient(struct epoll_event &ev);
+		void acceptNewClient();
 		void removeClient(int fd);
 		Client* getClient(int fd);
 		Client* getClientByNickname(const std::string& nickname);

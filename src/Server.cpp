@@ -95,32 +95,41 @@ void Server::handlePolling()
 		nfds = epoll_wait(_epollFd, events, MAXCONN, 1000); // timeout=?
 		if (nfds == -1)
 		{
-			if (errno == EINTR) // interrupted by signal, just retry
+			if (errno == EINTR) // signal interrupted epoll_wait, retry
 				continue;
 			throw std::runtime_error(std::string("epoll_wait error: ") + std::strerror(errno));
 		}
 		for (n = 0; n < nfds; ++n)
 		{
 			int eventFd = events[n].data.fd;
+			uint32_t evFlags = events[n].events;
 
+			// New connection on the listening socket
 			if (eventFd == _serFd)
-				acceptNewClient(ev);
-			// EPOLLHup = peer closed connection, EPOLLERR = socket error
-			// Both mean the fd is dead; treat it like a disconnect
-			else if (events[n].events & (EPOLLHUP | EPOLLERR))
-				// This alreadyu calls removeClient internally (via recv returning 0 or -1)
-				receiveMessage(eventFd);
-				// fd is now dead = skip any other event for it in this batch
-				// by marking it so the EPOLLIN/EPOLLOUT branches below dont fire
-			else if (events[n].events & EPOLLIN)
 			{
-				// Guard: this fd may have been removed by an earlier event in this batch
+				acceptNewClient();
+				continue; // newly registered fd cannot have events int this batch
+			}
+			// Dead fd: peer closed or socket error - handle first.
+			// EPOLLUP/EPOLLERR can arrive together with EPOLLING (unread data before close).
+			// We handle it here and 'continue' to prevent EPOLLIN/EPOLLOUT from firing on a fd we about to remove.
+			// receiveMessage() calls removeClient() internally when recv() returns 0 or -1.
+			if (evFlags & (EPOLLHUP | EPOLLERR))
+			{
+				receiveMessage(eventFd);
+				continue;
+			}
+			// Readable: data available from client.
+			// Guard: this fd may have been removed by an earlier event in
+			// this same epoll batch (e.g. a previous EPOLLHUP for the same fd).
+			if (evFlags & EPOLLIN)
+			{
 				if (_clients.find(eventFd) != _clients.end())
 					receiveMessage(eventFd);
 			}
-			else if (events[n].events & EPOLLOUT)
+			// Writeable: send buffer has space, flush queued output.
+			if (events[n].events & EPOLLOUT)
 			{
-				// Guard:same reason
 				if (_clients.find(eventFd) != _clients.end())
 					sendMessage(eventFd);
 			}
@@ -130,7 +139,7 @@ void Server::handlePolling()
 
 /* Accept incoming connection request from the new client, register it to the
 interesting list of epoll, and add new client to client map */
-void Server::acceptNewClient(struct epoll_event &ev)
+void Server::acceptNewClient()
 {
 	struct sockaddr_in addr;
 	socklen_t len;
@@ -145,16 +154,19 @@ void Server::acceptNewClient(struct epoll_event &ev)
 
 	if (fcntl(_newCliFd, F_SETFL, O_NONBLOCK) == -1)
 		throw std::runtime_error(std::string("fcntl error: ") + std::strerror(errno));
-	// Client sockets monitor both read and write
-	ev.events = EPOLLIN; // not sure whether to add EPOLLET
-	ev.data.fd = _newCliFd;
-	if (epoll_ctl(_epollFd, EPOLL_CTL_ADD, _newCliFd, &ev) == -1)
+
+	// Register with EPOLLIN only - new client has nothing queued to send yet.
+	// EPOLLOUT is added dynamically by enableWriteEvent() when output is queued.
+	struct epoll_event clientEv;
+	clientEv.events = EPOLLIN;
+	clientEv.data.fd = _newCliFd;
+	if (epoll_ctl(_epollFd, EPOLL_CTL_ADD, _newCliFd, &clientEv) == -1)
 		throw std::runtime_error(std::string("epoll_ctl_add error: ") + std::strerror(errno));
 
 	// Create new client instance and add it to server
 	if (inet_ntop(AF_INET, &(addr.sin_addr), ipBuf, INET_ADDRSTRLEN) == NULL)
 	{
-		epoll_ctl(_epollFd, EPOLL_CTL_DEL, _newCliFd, NULL); // remove from epoll first
+		epoll_ctl(_epollFd, EPOLL_CTL_DEL, _newCliFd, NULL); // must remove from epoll
 		throw std::runtime_error(std::string("inet_ntop error: ") + std::strerror(errno));
 	}
 	_clients.emplace(std::make_pair(_newCliFd, Client(_newCliFd, ipBuf, this)));
