@@ -48,11 +48,10 @@ int main(int argc, char *argv[])
 	std::cout << "\n==================== IRC SERVER ====================\n" << std::endl;
 
 	Server server(port, password);
+	signal(SIGINT, &Server::signalHandler);
+	signal(SIGQUIT, &Server::signalHandler);
 	try {
 		server.initServer();
-
-		/* Anything else */
-
 	}
 	catch(const std::exception &e) {
 		std::cerr << e.what() << std::endl;

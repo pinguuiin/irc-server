@@ -4,6 +4,7 @@
 #include <sys/epoll.h>
 #include <string>
 #include <map>
+#include <csignal>
 
 #define MAXCONN 128
 
@@ -47,15 +48,21 @@ class Server {
 
 		void stopServer();
 
+		// signal() expects a plain function pointer void(*)(int), but a non-static
+		// member function has an implicit "this" parameter, so it can't decay to
+		// that type. It only compiles if signalHandler is static
+		static void signalHandler(int);
+
 	private:
 		const uint16_t _port;
 		const std::string _password;
 		int _serFd{-1}; // listening socket fd
 		int _epollFd{-1};
 		int _newCliFd{-1};
-		bool _running;
 		std::map<int, Client> _clients;
 		std::map<std::string, Channel*> _channels;
+
+		static volatile sig_atomic_t  _running;
 };
 
 #endif

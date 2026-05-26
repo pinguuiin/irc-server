@@ -35,7 +35,7 @@ class Client {
 
 		void receiveAndHandleMessage(const char *buf);
 		void appendSendBuffer(const std::string& msg);
-		void sendPendingMessage();
+		bool sendPendingMessage();
 		std::string getNextMessage();
 
 	private:

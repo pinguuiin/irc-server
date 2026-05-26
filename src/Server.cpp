@@ -10,8 +10,10 @@
 #include <arpa/inet.h> // for inet_ntop()
 #include <iostream> // for io and error handling
 
+volatile sig_atomic_t Server::_running = 0;
+
 Server::Server(uint16_t port, std::string password)
-	: _port(port), _password(password), _running(false) {}
+	: _port(port), _password(password) {}
 
 Server::~Server()
 {
@@ -33,11 +35,17 @@ Server::~Server()
 	}
 }
 
+void Server::signalHandler(int signum)
+{
+	(void)signum;
+	_running = 0;
+}
+
 void Server::initServer()
 {
+	_running = 1;
 	createSocket();
 	handlePolling();
-	_running = true;
 }
 
 /* Create and set up the listening socket for Server */
@@ -90,13 +98,13 @@ void Server::handlePolling()
 	// Poll on monitored sockets
 	int n, nfds;
 
-	while (1)
+	while (_running == 1)
 	{
 		nfds = epoll_wait(_epollFd, events, MAXCONN, 1000); // timeout=?
 		if (nfds == -1)
 		{
-			if (errno == EINTR) // signal interrupted epoll_wait, retry
-				continue;
+			if (_running == 0) // signal interrupted epoll_wait, silently stop the server
+				break;
 			throw std::runtime_error(std::string("epoll_wait error: ") + std::strerror(errno));
 		}
 		for (n = 0; n < nfds; ++n)
@@ -135,6 +143,7 @@ void Server::handlePolling()
 			}
 		}
 	}
+	stopServer();
 }
 
 /* Accept incoming connection request from the new client, register it to the
@@ -150,10 +159,13 @@ void Server::acceptNewClient()
 	// Accept new connection request and add it to monitoring list
 	_newCliFd = accept(_serFd, (struct sockaddr *)&addr, &len);
 	if (_newCliFd == -1)
-		throw std::runtime_error(std::string("accept error: ") + std::strerror(errno));
+	{
+		std::cerr << "accept warning: " << std::strerror(errno) << "\n";
+		return;
+	}
 
 	if (fcntl(_newCliFd, F_SETFL, O_NONBLOCK) == -1)
-		throw std::runtime_error(std::string("fcntl error: ") + std::strerror(errno));
+		std::cerr << "fcntl warning fd=" << _newCliFd << ": " << std::strerror(errno) << "\n";
 
 	// Register with EPOLLIN only - new client has nothing queued to send yet.
 	// EPOLLOUT is added dynamically by enableWriteEvent() when output is queued.
@@ -161,13 +173,16 @@ void Server::acceptNewClient()
 	clientEv.events = EPOLLIN;
 	clientEv.data.fd = _newCliFd;
 	if (epoll_ctl(_epollFd, EPOLL_CTL_ADD, _newCliFd, &clientEv) == -1)
-		throw std::runtime_error(std::string("epoll_ctl_add error: ") + std::strerror(errno));
+		std::cerr << "epoll_ctl_add warning fd=" << _newCliFd << ": " << std::strerror(errno) << "\n";
 
 	// Create new client instance and add it to server
 	if (inet_ntop(AF_INET, &(addr.sin_addr), ipBuf, INET_ADDRSTRLEN) == NULL)
 	{
 		epoll_ctl(_epollFd, EPOLL_CTL_DEL, _newCliFd, NULL); // must remove from epoll
-		throw std::runtime_error(std::string("inet_ntop error: ") + std::strerror(errno));
+		std::cerr << "inet_ntop warning fd=" << _newCliFd << ": " << std::strerror(errno) << "\n";
+		close(_newCliFd);
+		_newCliFd = -1;
+		return;
 	}
 	_clients.emplace(std::make_pair(_newCliFd, Client(_newCliFd, ipBuf, this)));
 	_newCliFd = -1;
@@ -216,7 +231,8 @@ void Server::receiveMessage(int fd)
 		{
 			if (errno == EAGAIN || errno == EWOULDBLOCK)  // End of input
 				return ;
-			throw std::runtime_error(std::string("recv error: ") + std::strerror(errno));
+			std::cerr << "recv warning fd=" << fd << ": " << std::strerror(errno) << "\n";
+			return;
 		}
 		if (n == 0)  // Client closed connection without sending QUIT(close terminal or kill irssi process)
 		{
@@ -265,18 +281,22 @@ void Server::queueMessage(int fd, const std::string& msg)
 	Client* client = getClient(fd);
 
 	if (!client)
-		throw std::runtime_error(std::string("program error: client not in the list"));
+	{
+		std::cerr << "program warning fd=" << fd << ": " << "client not in the list" << "\n";
+		return;
+	}
 	client->appendSendBuffer(msg);
 	enableWriteEvent(fd);
 }
 
 void Server::sendMessage(int fd)
 {
-	_clients.at(fd).sendPendingMessage();
+	bool res = _clients.at(fd).sendPendingMessage();
 	// check again - sendPendingMessage may have triggered a disconnect
 	if (_clients.find(fd) == _clients.end())
 		return;
-	disableWriteEvent(fd);
+	if (res == true)
+		disableWriteEvent(fd);
 }
 
 void Server::enableWriteEvent(int fd)
@@ -343,6 +363,5 @@ const std::string& Server::getPassword() const
 
 void Server::stopServer()
 {
-	std::cerr << "TODO: Server::stop" << std::endl;
-	_running = false;
+	std::cout << "Server is shutting down" << std::endl;
 }
