@@ -159,10 +159,10 @@ void Server::acceptNewClient()
 	// Accept new connection request and add it to monitoring list
 	_newCliFd = accept(_serFd, (struct sockaddr *)&addr, &len);
 	if (_newCliFd == -1)
-		throw std::runtime_error(std::string("accept error: ") + std::strerror(errno));
+		std::cerr << "accept warning: " << std::strerror(errno) << "\n";
 
 	if (fcntl(_newCliFd, F_SETFL, O_NONBLOCK) == -1)
-		throw std::runtime_error(std::string("fcntl error: ") + std::strerror(errno));
+		std::cerr << "fcntl warning fd=" << _newCliFd << ": " << std::strerror(errno) << "\n";
 
 	// Register with EPOLLIN only - new client has nothing queued to send yet.
 	// EPOLLOUT is added dynamically by enableWriteEvent() when output is queued.
@@ -170,13 +170,13 @@ void Server::acceptNewClient()
 	clientEv.events = EPOLLIN;
 	clientEv.data.fd = _newCliFd;
 	if (epoll_ctl(_epollFd, EPOLL_CTL_ADD, _newCliFd, &clientEv) == -1)
-		throw std::runtime_error(std::string("epoll_ctl_add error: ") + std::strerror(errno));
+		std::cerr << "epoll_ctl_add warning fd=" << _newCliFd << ": " << std::strerror(errno) << "\n";
 
 	// Create new client instance and add it to server
 	if (inet_ntop(AF_INET, &(addr.sin_addr), ipBuf, INET_ADDRSTRLEN) == NULL)
 	{
 		epoll_ctl(_epollFd, EPOLL_CTL_DEL, _newCliFd, NULL); // must remove from epoll
-		throw std::runtime_error(std::string("inet_ntop error: ") + std::strerror(errno));
+		std::cerr << "inet_ntop warning fd=" << _newCliFd << ": " << std::strerror(errno) << "\n";
 	}
 	_clients.emplace(std::make_pair(_newCliFd, Client(_newCliFd, ipBuf, this)));
 	_newCliFd = -1;
@@ -225,7 +225,8 @@ void Server::receiveMessage(int fd)
 		{
 			if (errno == EAGAIN || errno == EWOULDBLOCK)  // End of input
 				return ;
-			throw std::runtime_error(std::string("recv error: ") + std::strerror(errno));
+			std::cerr << "recv warning fd=" << fd << ": " << std::strerror(errno) << "\n";
+			return;
 		}
 		if (n == 0)  // Client closed connection without sending QUIT(close terminal or kill irssi process)
 		{
@@ -274,7 +275,10 @@ void Server::queueMessage(int fd, const std::string& msg)
 	Client* client = getClient(fd);
 
 	if (!client)
-		throw std::runtime_error(std::string("program error: client not in the list"));
+	{
+		std::cerr << "program warning fd=" << fd << ": " << "client not in the list" << "\n";
+		return;
+	}
 	client->appendSendBuffer(msg);
 	enableWriteEvent(fd);
 }
