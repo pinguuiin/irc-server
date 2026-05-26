@@ -174,21 +174,23 @@ bool Client::sendPendingMessage()
 // extracted one at a time by getNextMessage().
 void Client::receiveAndHandleMessage(const char *buf)
 {
-    _recvBuffer += std::string(buf);
     std::string msg;
+	int fd = _fd;
+	Server *server = _server;
 
+    _recvBuffer += std::string(buf);
     while (!(msg = getNextMessage()).empty())
 	{
         const CommandParser::ParsedCommand& cmd = CommandParser::parse(msg);
         // ignore invalid commands with empty command name
         if (!CommandParser::validateCommand(cmd))
-            return;
+        	continue;
         CommandHandler cmdhandler(_server);
         cmdhandler.handleCommand(this, cmd);
 
 		// CRITICAL: if handleCommand removed us (e.g. QUIT or bad password),
 		// 'this' is now a dangling pointer; stops immediately
-		if (_server->getClient(_fd) == nullptr)
+		if (server->getClient(fd) == nullptr)
 			return;
     }
 }
