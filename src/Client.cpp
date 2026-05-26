@@ -133,7 +133,7 @@ void Client::appendSendBuffer(const std::string& msg)
 	_sendBuffer += msg; // Append to send buffer
 }
 
-void Client::sendPendingMessage()
+bool Client::sendPendingMessage()
 {
 	// Step 1 - try to drain the queue
 	while (!_sendBuffer.empty())
@@ -147,18 +147,19 @@ void Client::sendPendingMessage()
         {
             // Step 2 — socket buffer is full; try again later
             if (errno == EAGAIN || errno == EWOULDBLOCK)
-                return;
+                return false;
 
             // Step 3 — real error (e.g. client hung up)
             std::cerr << "Client fd=" << _fd
                       << ": send() error: " << std::strerror(errno) << "\n";
-            return;
+            return false;
         }
 
         // Erase the bytes that were successfully sent.
         // substr from 'sent' keeps whatever wasn't sent yet.
         _sendBuffer.erase(0, static_cast<size_t>(sent));
 	}
+	return true;
 }
 
 // ── Receive and Handle Message ─────────────────────────────────────

@@ -159,7 +159,10 @@ void Server::acceptNewClient()
 	// Accept new connection request and add it to monitoring list
 	_newCliFd = accept(_serFd, (struct sockaddr *)&addr, &len);
 	if (_newCliFd == -1)
+	{
 		std::cerr << "accept warning: " << std::strerror(errno) << "\n";
+		return;
+	}
 
 	if (fcntl(_newCliFd, F_SETFL, O_NONBLOCK) == -1)
 		std::cerr << "fcntl warning fd=" << _newCliFd << ": " << std::strerror(errno) << "\n";
@@ -177,6 +180,9 @@ void Server::acceptNewClient()
 	{
 		epoll_ctl(_epollFd, EPOLL_CTL_DEL, _newCliFd, NULL); // must remove from epoll
 		std::cerr << "inet_ntop warning fd=" << _newCliFd << ": " << std::strerror(errno) << "\n";
+		close(_newCliFd);
+		_newCliFd = -1;
+		return;
 	}
 	_clients.emplace(std::make_pair(_newCliFd, Client(_newCliFd, ipBuf, this)));
 	_newCliFd = -1;
@@ -285,11 +291,12 @@ void Server::queueMessage(int fd, const std::string& msg)
 
 void Server::sendMessage(int fd)
 {
-	_clients.at(fd).sendPendingMessage();
+	bool res = _clients.at(fd).sendPendingMessage();
 	// check again - sendPendingMessage may have triggered a disconnect
 	if (_clients.find(fd) == _clients.end())
 		return;
-	disableWriteEvent(fd);
+	if (res == true)
+		disableWriteEvent(fd);
 }
 
 void Server::enableWriteEvent(int fd)
