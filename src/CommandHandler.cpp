@@ -3,8 +3,8 @@
 #include "Client.hpp"
 #include "Server.hpp"
 #include "Utils.hpp"
-#include <cstdlib>
-#include <unistd.h> //for close
+#include <cstdlib> // for atoi()
+#include <iostream>
 
 // ── Anonymous-namespace helpers ────────────────────────────────────────────────
 // These free functions are file-local; they build the IRC numeric / error
@@ -313,6 +313,7 @@ void CommandHandler::handleJoin(Client* client, const std::vector<std::string>& 
 	_server->queueMessage(client->getFd(), ":ircserv 353 " + client->getNickname() +  " = " + channelName + " :" + namesList + "\r\n");
 	_server->queueMessage(client->getFd(), ":ircserv 366 " + client->getNickname() + " " + channelName + " :End of /NAMES list\r\n");
 
+	std::cout << clientMask(client) << " JOIN :" << channelName << "\n";
 }
 
 void CommandHandler::handlePrivmsg(Client* client, const std::vector<std::string>& params)
@@ -373,6 +374,9 @@ void CommandHandler::handleKick(Client* client, const std::vector<std::string>& 
 	channel->broadcastMessage(kickMsg, target); // notify everyone except the kicked user
 	_server->queueMessage(target->getFd(), kickMsg); // then notify the kicked user
 	channel->removeClient(target);
+
+	std::cout << clientMask(client) << " KICK " << params[0] << " " << params[1] << " :" << reason << "\n";
+
 	// Remove the channel itself if it's now empty
 	if (channel->getClients().empty())
 		_server->removeChannel(channel->getName());
@@ -667,6 +671,9 @@ void CommandHandler::handlePart(Client* client, const std::vector<std::string>& 
 	channel->broadcastMessage(partMsg, client);
 	_server->queueMessage(client->getFd(), partMsg);
 	channel->removeClient(client);
+
+	std::cout << clientMask(client) << " PART " << params[0] << " :" << reason << "\n";
+
 	// Remove the channel itself if it's now empty
 	if (channel->getClients().empty())
 		_server->removeChannel(channel->getName());
@@ -712,6 +719,8 @@ void CommandHandler::handleQuit(Client* client, const std::vector<std::string>& 
 		if (toLeave[i]->getClients().empty())
 			_server->removeChannel(toLeave[i]->getName());
 	}
+
+	std::cout << clientMask(client) << " QUIT :" << reason << "\n";
 	// removeClient closes the fd AND removes it
 	// from epoll AND erases it from _clients, all in one call.
 	int fd = client->getFd();

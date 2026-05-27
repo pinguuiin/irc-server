@@ -6,6 +6,7 @@
 #include <cstring> // for strerror(), memset()
 #include <fcntl.h>
 #include <sys/socket.h>
+#include <sys/epoll.h>
 #include <netinet/in.h> // for struct sockaddr
 #include <arpa/inet.h> // for inet_ntop()
 #include <iostream> // for io and error handling
@@ -193,6 +194,7 @@ void Server::acceptNewClient()
 		return;
 	}
 	_clients.emplace(std::make_pair(_newCliFd, Client(_newCliFd, ipBuf, this)));
+	std::cout << "A new client is connected" << "\n";
 	_newCliFd = -1;
 }
 
@@ -207,6 +209,7 @@ void Server::removeClient(int fd)
 		std::cerr << "epoll_ctl_del warning fd=" << fd << ": " << std::strerror(errno) << "\n";
 	_clients.erase(fd);
 	close(fd);
+	std::cout << "A client is removed from the server" << "\n";
 }
 
 Client* Server::getClient(int fd)
