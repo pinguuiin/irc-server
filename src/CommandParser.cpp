@@ -1,6 +1,16 @@
 #include "CommandParser.hpp"
 #include "Utils.hpp"
 
+/**
+ * Parses a raw IRC message line into a ParsedCommand.
+ *
+ * Grammar handled:
+ *   [:<prefix> ] <command> [<params>...] [:<trailing>]
+ *
+ * A leading ':' prefix (sent by some clients) is skipped — the server
+ * derives the sender identity from the Client object, not the message.
+ * Everything after the first ' :' token becomes the trailing field.
+ */
 CommandParser::ParsedCommand CommandParser::parse(const std::string& msg)
 {
 	ParsedCommand cmd;
