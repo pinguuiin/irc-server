@@ -48,7 +48,12 @@ void Server::initServer()
 	handlePolling();
 }
 
-/* Create and set up the listening socket for Server */
+/**
+ * Creates, configures, and binds the listening TCP socket.
+ *
+ * SO_REUSEADDR lets the server rebind immediately after a restart
+ * without waiting for the OS TIME_WAIT period to expire.
+ */
 void Server::createSocket()
 {
 	// create and configure socket
@@ -78,8 +83,12 @@ void Server::createSocket()
 	std::cout << "Server listening on port " << _port << "..." << std::endl;
 }
 
-/* Create epoll instance and start polling for new connection requests or
-messages sent by registered clients */
+/**
+ * Creates the epoll instance and runs the main I/O event loop.
+ *
+ * epoll_wait() uses a 1000 ms timeout so the _running flag is checked
+ * at least once per second, enabling a clean shutdown on SIGINT/SIGQUIT.
+ */
 void Server::handlePolling()
 {
 	_epollFd = epoll_create1(0);
@@ -118,18 +127,17 @@ void Server::handlePolling()
 				acceptNewClient();
 				continue; // newly registered fd cannot have events int this batch
 			}
-			// Dead fd: peer closed or socket error - handle first.
-			// EPOLLUP/EPOLLERR can arrive together with EPOLLING (unread data before close).
-			// We handle it here and 'continue' to prevent EPOLLIN/EPOLLOUT from firing on a fd we about to remove.
-			// receiveMessage() calls removeClient() internally when recv() returns 0 or -1.
+			/// Handle dead fds first (EPOLLHUP/EPOLLERR may arrive together with EPOLLIN).
+			// Calling receiveMessage() here lets recv() return 0 / -1 so removeClient()
+			// is triggered. We 'continue' to prevent EPOLLIN/EPOLLOUT from firing on a
+			// fd we're about to remove.
 			if (evFlags & (EPOLLHUP | EPOLLERR))
 			{
 				receiveMessage(eventFd);
 				continue;
 			}
-			// Readable: data available from client.
-			// Guard: this fd may have been removed by an earlier event in
-			// this same epoll batch (e.g. a previous EPOLLHUP for the same fd).
+			// Guard: this fd may have been removed by an earlier event in the same
+			// epoll batch (e.g. a previous EPOLLHUP for the same fd).
 			if (evFlags & EPOLLIN)
 			{
 				if (_clients.find(eventFd) != _clients.end())
@@ -218,6 +226,16 @@ Client* Server::getClientByNickname(const std::string& nickname)
 	return NULL;
 }
 
+/**
+ * Reads all available data from the client's non-blocking socket.
+ *
+ * Loops on recv() until EAGAIN (no more data) or an error/disconnect:
+ *   - recv() == 0: peer closed the connection cleanly (no QUIT was sent).
+ *                  Broadcasts a QUIT to affected channels, cleans up, and
+ *                  calls removeClient().
+ *   - recv()  < 0: non-EAGAIN error — log and return. The fd stays alive
+ *                  until the next EPOLLHUP/EPOLLERR triggers cleanup.
+ */
 void Server::receiveMessage(int fd)
 {
 	char buf[1024];
@@ -261,7 +279,7 @@ void Server::receiveMessage(int fd)
 				}
 			}
 			removeClient(fd);
-			return; // <- CRITICAL: fd is dead, stop the loop immediately
+			return; // fd is dead — stop the loop immediately
 		}
 		else
 		{
@@ -269,7 +287,7 @@ void Server::receiveMessage(int fd)
 			if (!client)
 				return;
 			client->receiveAndHandleMessage(buf);
-			// Check again - handleQuit may have removed this client during processing
+			// handleCommand may have removed this client (e.g. QUIT, bad PASS)
 			if (_clients.find(fd) == _clients.end())
 				return;
 		}

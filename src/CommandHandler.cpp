@@ -6,6 +6,9 @@
 #include <cstdlib>
 #include <unistd.h> //for close
 
+// ── Anonymous-namespace helpers ────────────────────────────────────────────────
+// These free functions are file-local; they build the IRC numeric / error
+// strings used throughout the handlers below.
 namespace {
 	static std::string clientMask(Client* client)
 	{
@@ -52,15 +55,13 @@ void CommandHandler::handleCommand(Client* client, const CommandParser::ParsedCo
 	if (!cmd.trailing.empty())
 		params.push_back(cmd.trailing);
 
-	// These are the ONLY commands allowed before the handshake is complete.
-	// Every other command requires the client to be fully registered.
+	// Pre-auth commands are always allowed regardless of registration state.
 	bool isPreAuthCommand = (command == "PASS" || command == "NICK" || command == "USER"
 		|| command == "CAP" || command == "PING" || command == "QUIT");
 	// If the client is NOT yet authenticated and this is NOT a pre-auth command,
 	// reject it with 451 ERR_NOTREGISTERED and stop here.
 	if (!client->isAuthenticated() && !isPreAuthCommand)
 	{
-		// "451" IRC numeric for "You have not registered"
 		_server->queueMessage(client->getFd(), ":ircserv 451 * " + command + " :You have not registerd\r\n");
 		return;
 	}
@@ -94,11 +95,14 @@ void CommandHandler::handleCommand(Client* client, const CommandParser::ParsedCo
 	else
 		_server->queueMessage(client->getFd(), errUnknownCommand(client->getNickname(), command));
 }
-// ── handleCap ───────────────────────────────────────────────────────
-// irssi sends "CAP LS" before NICK/USER to negotiate extra features.
-// We don't support any capabilities, so we reply with an empty list
-// and then send "CAP END" to tell the client to stop waiting and
-// proceed with normal registration (NICK / USER / PASS).
+
+/**
+ * CAP — IRC capability negotiation.
+ *
+ * irssi sends "CAP LS" before NICK/USER to discover supported extensions.
+ * This server supports none, so we reply with an empty list and NAK every
+ * REQ. CAP END is silently accepted; irssi then proceeds with registration.
+ */
 void CommandHandler::handleCap(Client* client, const std::vector<std::string>& params)
 {
 	if (params.empty())
@@ -118,15 +122,17 @@ void CommandHandler::handleCap(Client* client, const std::vector<std::string>& p
 	}
 	else if (subcommand == "END")
 	{
-		// Client is done with capability negotiaton, do nothing
-		// tryCompleteRegistration will fire once PASS+NICK+USER arrive
+		// CAP END: do nothing — tryCompleteRegistration fires once PASS+NICK+USER arrive.e
 	}
 
 }
 
-// ── handlePass ──────────────────────────────────────────────────────
-// Validates the servver password and marks _passOk on the client.
-// Then tries to complete registration n case NICK+USER already arrived.
+/**
+ * PASS — validates the server password.
+ *
+ * Sends 464 ERR_PASSWDMISMATCH on failure. On success marks _passOk and
+ * calls tryCompleteRegistration() in case NICK+USER already arrived.
+ */
 void CommandHandler::handlePass(Client* client, const std::vector<std::string>& params)
 {
 	if (params.empty()) {
@@ -142,9 +148,14 @@ void CommandHandler::handlePass(Client* client, const std::vector<std::string>& 
 	tryCompleteRegistration(client);
 }
 
-// ── handleNick ──────────────────────────────────────────────────────
-// Sets nickname after checking validity and uniqueness (433 ERR_NICKNAMEINUSE).
-// Marks _nickSet and tries to complete registration.
+/**
+ * NICK — sets or changes a client's nickname.
+ *
+ * During registration: validates format (432), checks uniqueness (433),
+ * stores the nick, marks _nickSet, and calls tryCompleteRegistration().
+ * After registration: broadcasts a NICK message to all channels the
+ * client is currently in, then confirms to the client themselves.
+ */
 void CommandHandler::handleNick(Client* client, const std::vector<std::string>& params)
 {
 	if (params.empty()) {
@@ -185,8 +196,12 @@ void CommandHandler::handleNick(Client* client, const std::vector<std::string>& 
 	tryCompleteRegistration(client);
 }
 
-// ── handleUser ──────────────────────────────────────────────────────
-// Sets the username (ident). Marks _userSet and tries to complete registration.
+/**
+ * USER — sets the client's username (ident).
+ *
+ * Rejects re-registration (462 ERR_ALREADYREGISTRED). Marks _userSet and
+ * calls tryCompleteRegistration() on success.
+ */
 void CommandHandler::handleUser(Client* client, const std::vector<std::string>& params)
 {
 	// 462 ERR_ALREADYREGISTRED - USER cannot be sent more than once per session.
@@ -206,13 +221,15 @@ void CommandHandler::handleUser(Client* client, const std::vector<std::string>& 
 	tryCompleteRegistration(client);
 }
 
-// ── tryCompleteRegistration ─────────────────────────────────────────
-// Called after every PASS/NICK/USER handler.
-// Sends 001-004 numerics once all three steps are done.
-// irssi waits for 001 RPL_WELCOME before considering itself connected.
+/**
+ * tryCompleteRegistration — sends the welcome burst once PASS+NICK+USER are all done.
+ *
+ * irssi waits for 001 RPL_WELCOME before considering itself connected, so
+ * 001–004 are all sent here in sequence.
+ */
 void CommandHandler::tryCompleteRegistration(Client* client)
 {
-	if (client->isAuthenticated()) // fast exit for already-registered clients
+	if (client->isAuthenticated())
 		return;
 	if (!client->isPassOk() || !client->isNickSet() || !client->isUserSet())
 		return;
@@ -261,15 +278,15 @@ void CommandHandler::handleJoin(Client* client, const std::vector<std::string>& 
 
 	channel->addClient(client);
 
-	// If this client is the only member, they just created the channel.
-	// Make them the channel operator automatically.
+	// The first member automatically becomes the channel operator.
 	if (channel->getClients().size() == 1)
 		channel->addOperator(client);
+
 	std::string joinMsg = ":" + clientMask(client) + " JOIN :" + channelName + "\r\n";
 	channel->broadcastMessage(joinMsg, client);
 	_server->queueMessage(client->getFd(), joinMsg);
 
-	// Build the names list: prefix '@' for operators, nothing for regular users
+	// Build the names list — '@' prefix for operators.
 	std::string namesList;
 	const std::vector<Client*>& members = channel->getClients();
 
@@ -285,18 +302,15 @@ void CommandHandler::handleJoin(Client* client, const std::vector<std::string>& 
 
 		namesList += members[i]->getNickname();
 	}
-	// TOPIC (332) - send the existing topic (if there is one) to the joining client
-	// irssi displays this in the channel header, [FYI]irssi silently ignores 331
+
+	// Send topic if one is set (irssi displays it in the channel header).
+	//[FYI]irssi silently ignores 331
 	if (!channel->getTopic().empty())
 	{
 		_server->queueMessage(client->getFd(), ":ircserv 332 " + client->getNickname() + " " + channelName + " :" + channel->getTopic() + "\r\n");
 	}
-	// 353 RPL_NAMREPLY - "=" means public channel (vs "@" secret or "*" private)
-	// Format: :server 353 <yournick> = <#channel> : <names...>
+	// 353 RPL_NAMREPLY + 366 RPL_ENDOFNAMES — irssi needs both to populate the nick list.
 	_server->queueMessage(client->getFd(), ":ircserv 353 " + client->getNickname() +  " = " + channelName + " :" + namesList + "\r\n");
-
-	// 366 RPL_ENDOFNAME - tells irssi the names list is complete
-	// Format: :server 366 <yournick> <#channel> :End of /NAME list
 	_server->queueMessage(client->getFd(), ":ircserv 366 " + client->getNickname() + " " + channelName + " :End of /NAMES list\r\n");
 
 }
@@ -356,8 +370,8 @@ void CommandHandler::handleKick(Client* client, const std::vector<std::string>& 
 	}
 	std::string reason = params.size() > 2 ? params[2] : client->getNickname();
 	std::string kickMsg = ":" + clientMask(client) + " KICK " + params[0] + " " + params[1] + " :" + reason + "\r\n";
-	channel->broadcastMessage(kickMsg, target); // exclude target from broadcast
-	_server->queueMessage(target->getFd(), kickMsg); // send once to target
+	channel->broadcastMessage(kickMsg, target); // notify everyone except the kicked user
+	_server->queueMessage(target->getFd(), kickMsg); // then notify the kicked user
 	channel->removeClient(target);
 	// Remove the channel itself if it's now empty
 	if (channel->getClients().empty())
@@ -411,6 +425,7 @@ void CommandHandler::handleTopic(Client* client, const std::vector<std::string>&
 		return;
 	}
 
+	// No topic argument — query the current topic.
 	if (params.size() == 1) {
 		if (channel->getTopic().empty())
 			_server->queueMessage(client->getFd(), ":ircserv 331 " + client->getNickname() + " " + params[0] + " :No topic is set\r\n");
@@ -424,6 +439,7 @@ void CommandHandler::handleTopic(Client* client, const std::vector<std::string>&
 		return;
 	}
 	channel->setTopic(params[1]);
+	// Broadcast to other members, then confirm to the caller.
 	channel->broadcastMessage(":" + clientMask(client) + " TOPIC " + params[0] + " :" + params[1] + "\r\n", client); // <-- pass client, not NULL, to exclude them from broadcast
 	_server->queueMessage(client->getFd(), ":" + clientMask(client) + " TOPIC " + params[0] + " :" + params[1] + "\r\n");
 }
@@ -617,10 +633,14 @@ void CommandHandler::handleMode(Client* client, const std::vector<std::string>& 
 		_server->queueMessage(client->getFd(), modeMsg);
 	}
 }
-// ── handlePart ──────────────────────────────────────────────────────
-// Removes the client from a channel.
-// Broadcasts PART to all members (including the departing client)
-// before removing them from the member list.
+
+/**
+ * PART — removes the calling client from a channel.
+ *
+ * Broadcasts PART to all remaining members (excluding the leaver), then sends
+ * it directly to the leaver so irssi closes the channel window. Destroys the
+ * channel if it becomes empty.
+ */
 void CommandHandler::handlePart(Client* client, const std::vector<std::string>& params)
 {
 	if(params.empty())
@@ -652,21 +672,25 @@ void CommandHandler::handlePart(Client* client, const std::vector<std::string>& 
 		_server->removeChannel(channel->getName());
 }
 
-// ── handlePing ──────────────────────────────────────────────────────
-// Responds to PING with PONG.
-// IRC clients send PING regularly; no reply = disconnect after timeout.
-// Format:  PING <token>  →  :ircserv PONG ircserv :<token>
+/**
+ * PING — responds with a matching PONG.
+ *
+ * IRC clients send PING periodically; no reply within the client's timeout
+ * causes a disconnect. Format: PING <token> → :ircserv PONG ircserv :<token>
+ */
 void CommandHandler::handlePing(Client* client, const std::vector<std::string>& params)
 {
 	std::string token = params.empty() ? "ircserv" : params[0];
 	_server->queueMessage(client->getFd(), ":ircserv PONG ircserv :" + token + "\r\n");
 }
 
-// ── handleQuit ──────────────────────────────────────────────────────
-// Handles a graceful disconnect.
-// 1. Broadcasts QUIT to every channel the client is in.
-// 2. Removes the client from each channel's member list.
-// 3. Tells the server to close the fd and delete the client object.
+/**
+ * QUIT — graceful client disconnect.
+ *
+ * 1. Broadcasts QUIT to every channel the client is in (excluding the quitter).
+ * 2. Removes the client from each channel; destroys empty ones.
+ * 3. Calls Server::removeClient() to close the fd.
+ */
 void CommandHandler::handleQuit(Client* client, const std::vector<std::string>& params)
 {
 	std::string reason = params.empty() ? "Client quit" : params[0];

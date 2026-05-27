@@ -37,18 +37,12 @@ std::string Utils::trim(const std::string& str)
 	return str.substr(start, end - start);
 }
 
-// ── isValidNickname() ────────────────────────────────────────────────
-// IRC RFC 1459 rules for nicknames:
-//   • 1 to 9 characters long
-//   • First character: a letter (a-z / A-Z) OR one of: [ ] \ ^ _ ` { | }
-//     (these are called "special" characters in the RFC)
-//   • Remaining characters: letter, digit, hyphen '-', or special
-//
-// Examples:
-//   "alice"   → valid
-//   "Bob-42"  → valid
-//   "9lives"  → INVALID (starts with digit)
-//   "toolongname" → INVALID (> 9 chars)
+/**
+ * Validates an IRC nickname against RFC 1459 §2.3.1:
+ *   - Length: 1–9 characters.
+ *   - First character: letter or special ([]\\^_`{|}).
+ *   - Remaining characters: letter, digit, hyphen, or special.
+ */
 bool Utils::isValidNickname(const std::string& nick)
 {
 	// Rule 1: length between 1 and 9
@@ -76,20 +70,19 @@ bool Utils::isValidNickname(const std::string& nick)
 	return true;
 }
 
-// ── isValidChannelName() ─────────────────────────────────────────────
-// IRC channel name rules (RFC 1459 §1.3):
-//   • Must start with '#' (we only support '#' channels, not '&')
-//   • Length: 2 to 50 characters (the '#' counts as 1)
-//   • Must NOT contain: space ' ', ctrl-G '\a' (bell), or comma ','
-//     (comma is used as a separator in JOIN lists, so it can't appear
-//      inside a name)
-//
-// Examples:
-//   "#general"  → valid
-//   "#a"        → valid  (just '#' + one char)
-//   "#"         → INVALID (no name after the '#')
-//   "general"   → INVALID (missing '#' prefix)
-//   "(#bad name)" → INVALID (contains space)
+/**
+ * Validates an IRC channel name against RFC 1459 §1.3:
+ *   - Must start with '#'.
+ *   - Length: 2–50 characters (including the '#').
+ *   - Must not contain: space ' ', bell '\a', or comma ','.
+ *
+ * Examples:
+ *   "#general"  → valid
+ *   "#a"        → valid  (just '#' + one char)
+ *   "#"         → INVALID (no name after the '#')
+ *   "general"   → INVALID (missing '#' prefix)
+ *   "(#bad name)" → INVALID (contains space)
+ */
 bool Utils::isValidChannelName(const std::string& name)
 {
 	// Rule 1: must start with '#'

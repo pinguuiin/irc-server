@@ -27,6 +27,16 @@ static int stringToPort(const char* arg)
 	return p;
 }
 
+/**
+ * @file main.cpp
+ * @brief Entry point — validates arguments and starts the IRC server.
+ *
+ * Usage: ./ircserv <port> <password>
+ *   port     — TCP port to listen on (1024–65535, digits only)
+ *   password — non-empty server password clients must supply via PASS
+ *
+ * SIGINT and SIGQUIT are wired to Server::signalHandler() for clean shutdown.
+ */
 int main(int argc, char *argv[])
 {
 	if (argc != 3) {
