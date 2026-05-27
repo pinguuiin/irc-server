@@ -3,9 +3,8 @@
 #include "Client.hpp"
 #include "Server.hpp"
 #include "Utils.hpp"
-#include <cstdlib>
-#include <unistd.h> //for close
-#include <iostream> //for stream
+#include <cstdlib> // for atoi()
+#include <iostream>
 
 // ── Anonymous-namespace helpers ────────────────────────────────────────────────
 // These free functions are file-local; they build the IRC numeric / error

@@ -24,7 +24,6 @@
 #ifndef SERVER_HPP
 #define SERVER_HPP
 
-#include <sys/epoll.h>
 #include <string>
 #include <map>
 #include <csignal>

@@ -1,6 +1,5 @@
-#include "../include/Utils.hpp"
+#include "Utils.hpp"
 #include <cctype>
-#include <iostream>
 
 std::string Utils::toUpper(const std::string& str)
 {

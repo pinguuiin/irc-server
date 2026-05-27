@@ -1,13 +1,12 @@
-#include "../include/Client.hpp"
-#include "../include/Server.hpp"
-#include "../include/CommandParser.hpp"
-#include "../include/CommandHandler.hpp"
-#include <iostream>
+#include "Client.hpp"
+#include "Server.hpp"
+#include "CommandParser.hpp"
+#include "CommandHandler.hpp"
 
 #include <sys/socket.h>	// for send()
 #include <cerrno>		// for errno, EAGAIN, EWOULDBLOCK
-#include <iostream>
 #include <cstring>		// for strerror()
+#include <iostream>
 
 Client::Client(int fd, std::string ip, Server* server)
 	: _fd(fd), _ip(ip), _server(server), _passOk(false), _nickSet(false),

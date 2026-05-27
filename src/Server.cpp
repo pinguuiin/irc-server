@@ -6,6 +6,7 @@
 #include <cstring> // for strerror(), memset()
 #include <fcntl.h>
 #include <sys/socket.h>
+#include <sys/epoll.h>
 #include <netinet/in.h> // for struct sockaddr
 #include <arpa/inet.h> // for inet_ntop()
 #include <iostream> // for io and error handling
