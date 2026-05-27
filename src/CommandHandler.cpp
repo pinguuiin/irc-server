@@ -5,6 +5,7 @@
 #include "Utils.hpp"
 #include <cstdlib>
 #include <unistd.h> //for close
+#include <iostream> //for stream
 
 namespace {
 	static std::string clientMask(Client* client)
@@ -299,6 +300,7 @@ void CommandHandler::handleJoin(Client* client, const std::vector<std::string>& 
 	// Format: :server 366 <yournick> <#channel> :End of /NAME list
 	_server->queueMessage(client->getFd(), ":ircserv 366 " + client->getNickname() + " " + channelName + " :End of /NAMES list\r\n");
 
+	std::cout << clientMask(client) << " JOIN :" << channelName << "\n";
 }
 
 void CommandHandler::handlePrivmsg(Client* client, const std::vector<std::string>& params)
@@ -359,6 +361,9 @@ void CommandHandler::handleKick(Client* client, const std::vector<std::string>& 
 	channel->broadcastMessage(kickMsg, target); // exclude target from broadcast
 	_server->queueMessage(target->getFd(), kickMsg); // send once to target
 	channel->removeClient(target);
+
+	std::cout << clientMask(client) << " KICK " << params[0] << " " << params[1] << " :" << reason << "\n";
+
 	// Remove the channel itself if it's now empty
 	if (channel->getClients().empty())
 		_server->removeChannel(channel->getName());
@@ -647,6 +652,9 @@ void CommandHandler::handlePart(Client* client, const std::vector<std::string>& 
 	channel->broadcastMessage(partMsg, client);
 	_server->queueMessage(client->getFd(), partMsg);
 	channel->removeClient(client);
+
+	std::cout << clientMask(client) << " PART " << params[0] << " :" << reason << "\n";
+
 	// Remove the channel itself if it's now empty
 	if (channel->getClients().empty())
 		_server->removeChannel(channel->getName());
@@ -688,6 +696,8 @@ void CommandHandler::handleQuit(Client* client, const std::vector<std::string>& 
 		if (toLeave[i]->getClients().empty())
 			_server->removeChannel(toLeave[i]->getName());
 	}
+
+	std::cout << clientMask(client) << " QUIT :" << reason << "\n";
 	// removeClient closes the fd AND removes it
 	// from epoll AND erases it from _clients, all in one call.
 	int fd = client->getFd();
